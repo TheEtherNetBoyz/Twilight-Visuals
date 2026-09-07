@@ -106,7 +106,13 @@ u8 query(DuskEnvironmentQuery kind, u8 nativeValue) {
     if (!active() || restoring) return nativeValue;
     const char* stage = dComIfGp_getStartStageName();
     const bool palace = stage && std::strncmp(stage, "D_MN08", 6) == 0;
-    if (kind == DuskEnvironment_ActorTwilight) return s_visual_enemy_form_context && active() && stage && !palace ? 1 : nativeValue;
+    if (kind == DuskEnvironment_ActorTwilight) {
+        // King Bulblin's encounter controller and supporting actors use their native form/state
+        // checks to initialize the fight. Keep those checks untouched while retaining the visual
+        // Twilight treatment supplied by the remaining query types.
+        if (king_bulblin_encounter_active()) return nativeValue;
+        return s_visual_enemy_form_context && active() && stage && !palace ? 1 : nativeValue;
+    }
     if (kind == DuskEnvironment_SnowStorm) return static_cast<u8>(runtime_settings().weather) == 6;
     if (!stage) return nativeValue;
     if (palace) return kind == DuskEnvironment_VisualTwilight ? 0 : nativeValue;

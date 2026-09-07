@@ -192,5 +192,3 @@ void close_settings_window() {
 }
 
 }  // namespace twilight_visuals
-
-

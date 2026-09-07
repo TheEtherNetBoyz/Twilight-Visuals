@@ -23,12 +23,22 @@ bool previousUpdateStartedRolling = false;
 bool justFinishedRoll = false;
 unsigned transformTraceFrames = 0;
 bool* humanWarpRequest = nullptr;
+bool player_ready(daAlink_c* p) {
+    return p != nullptr &&
+        p == static_cast<daAlink_c*>(dComIfGp_getPlayer(0)) &&
+        dComIfGp_getAttention() != nullptr;
+}
 bool enabled(daAlink_c* p) {
+    if (!player_ready(p)) return false;
+
     // Targeting owns A's normal roll/evade actions, even without a locked actor.
     // Also respect switch-targeting, where lock-on outlasts the physical press.
+    // Read the live attention object instead of Link's cached pointer. The execute
+    // hook can run while Link is being created or destroyed, before that member is
+    // initialized (or after it has become stale).
     return active() && runtime_settings().skywardSwordRunning &&
         !p->checkWolf() && !p->checkEventRun() &&
-        !mDoCPd_c::getHoldL(PAD_1) && !p->checkAttentionLock();
+        !mDoCPd_c::getHoldL(PAD_1) && !dComIfGp_getAttention()->Lockon();
 }
 bool held(daAlink_c* p) {
     return enabled(p) && inputPlayer == p && aButton.running() && p->doButton();
@@ -105,6 +115,16 @@ void transform_init_post(ModContext*, void* args, void* retval, void*) {
 HookAction input_pre(ModContext*, void* args, void*, void*) {
     if (!compat::host_api()->simulationFrame()) return HOOK_CONTINUE;
     auto* p = mods::arg<daAlink_c*>(args, 0);
+    if (!player_ready(p)) {
+        aButton = {};
+        inputPlayer = nullptr;
+        rollChainPlayer = nullptr;
+        previousUpdateStartedRolling = false;
+        justFinishedRoll = false;
+        inputSampled = false;
+        transformTraceFrames = 0;
+        return HOOK_CONTINUE;
+    }
     if (p->mProcID == daAlink_c::PROC_METAMORPHOSE ||
         p->mProcID == daAlink_c::PROC_METAMORPHOSE_ONLY) {
         if (transformTraceFrames < 900 && transformTraceFrames++ % 30 == 0)

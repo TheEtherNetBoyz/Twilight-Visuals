@@ -62,6 +62,7 @@ void provide_visual_state(u8* enabled, u8* style, f32* brightness,
                           s32* chromaticAberration, u8* skyVariant, u8* weather,
                           u8* alternateRun);
 s16 provide_enemy_proc(s16 procName);
+bool king_bulblin_encounter_active();
 s32 provide_environment_layer(s32 currentLayer);
 u8 provide_bloom_profile(u8 defaultProfile);
 bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,

@@ -16,6 +16,22 @@ namespace twilight_visuals {
 namespace {
 RuntimeSettings g_runtime;
 bool g_speedrunSuppressed = false;
+bool g_kingBulblinEncounter = false;
+char g_enemyProcStage[16] = {};
+s32 g_enemyProcRoom = -128;
+s32 g_enemyProcLayer = -128;
+
+bool is_king_bulblin_stage(const char* stage) {
+    if (stage == nullptr) return false;
+
+    // Mounted encounters 1/2, the desert rematch, and the Hyrule Castle rematch. These fights
+    // coordinate native rider, mount, boss, and event actor IDs and cannot use Twilight-form
+    // actor substitutions.
+    return std::strncmp(stage, "F_SP102", 7) == 0 ||
+           std::strncmp(stage, "F_SP123", 7) == 0 ||
+           std::strncmp(stage, "F_SP118", 7) == 0 ||
+           std::strncmp(stage, "D_MN09B", 7) == 0;
+}
 }
 
 const RuntimeSettings& runtime_settings() { return g_runtime; }
@@ -57,8 +73,32 @@ void provide_visual_state(u8* enabled, u8* style, f32* brightness,
 
 s16 provide_enemy_proc(s16 procName) {
     const char* stage = dComIfGp_getStartStageName();
+    const s32 room = dComIfGp_roomControl_getStayNo();
+    const s32 layer = dComIfG_play_c::getLayerNo(0);
+
+    // Actor records for a newly loaded encounter pass through this provider in load order.
+    // Reset the encounter guard when that scope changes, then latch it as soon as King Bulblin's
+    // controller is encountered. His scripts require the original supporting actor identities.
+    if (stage == nullptr || std::strncmp(g_enemyProcStage, stage, sizeof(g_enemyProcStage) - 1) != 0 ||
+        room != g_enemyProcRoom || layer != g_enemyProcLayer) {
+        g_kingBulblinEncounter = false;
+        g_enemyProcRoom = room;
+        g_enemyProcLayer = layer;
+        if (stage != nullptr) {
+            std::strncpy(g_enemyProcStage, stage, sizeof(g_enemyProcStage) - 1);
+            g_enemyProcStage[sizeof(g_enemyProcStage) - 1] = '\0';
+        } else {
+            g_enemyProcStage[0] = '\0';
+        }
+    }
+
+    if (is_king_bulblin_stage(stage) || procName == fpcNm_B_GM_e) {
+        g_kingBulblinEncounter = true;
+        return procName;
+    }
+
     if (!active() || stage == nullptr || std::strncmp(stage, "D_MN08", 6) == 0 ||
-        dComIfG_play_c::getLayerNo(0) == 14) {
+        layer == 14 || g_kingBulblinEncounter) {
         return procName;
     }
 
@@ -78,6 +118,10 @@ s16 provide_enemy_proc(s16 procName) {
     default:
         return procName;
     }
+}
+
+bool king_bulblin_encounter_active() {
+    return g_kingBulblinEncounter || is_king_bulblin_stage(dComIfGp_getStartStageName());
 }
 
 s32 provide_environment_layer(s32 currentLayer) {
@@ -100,7 +144,8 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
                          s32* musicStatus) {
     (void)room;
     (void)layer;
-    if (!active() || spot == nullptr || inDarkness ||
+    const bool darkHourPreset = g_runtime.style == Style::DarkHour;
+    if (!active() || spot == nullptr || (inDarkness && !darkHourPreset) ||
         (spot[0] != 'F' && spot[0] != 'R') ||
         (demoWave != 0 && sceneNo != Z2SCENE_KAKARIKO_VILLAGE)) {
         return false;
@@ -152,9 +197,11 @@ void provide_audio_sequence(DuskTwilightAudioSequenceV1* state) {
         state->mainReplacementReady && state->subMusicEligible;
     state->battleScope = enabled && state->safeMusicEvent &&
         (state->ordinaryBattle || !state->battleFlagActive) && state->subMusicEligible;
+    const u8 selectedMusicMode =
+        g_runtime.style == Style::AstralPlane ? 1 :
+        g_runtime.style == Style::DarkHour ? 2 : 0;
     state->musicMode = enabled && (state->replacementScene || state->battleScope) ?
-        (g_runtime.style == Style::AstralPlane ? 1 :
-         g_runtime.style == Style::DarkHour ? 2 : 0) : 0;
+        selectedMusicMode : 0;
 }
 
 void provide_running(DuskTwilightRunningV1* state) {
