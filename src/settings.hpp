@@ -13,6 +13,8 @@ struct Settings {
     ConfigVarHandle weather{};
     ConfigVarHandle musicVolume{};
     ConfigVarHandle skywardSwordRunning{};
+    ConfigVarHandle humanWolfSenses{};
+    ConfigVarHandle excludePalaceOfTwilight{};
 };
 
 Settings& settings();
@@ -25,5 +27,3 @@ bool get_bool(ConfigVarHandle handle, bool fallback = false);
 int64_t get_int(ConfigVarHandle handle, int64_t fallback = 0);
 
 }  // namespace twilight_visuals
-
-

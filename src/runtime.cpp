@@ -54,6 +54,8 @@ void refresh_runtime_settings() {
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.musicVolume, 100), 0, 100)) /
         100.0f;
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
+    g_runtime.humanWolfSenses = get_bool(config.humanWolfSenses);
+    g_runtime.excludePalaceOfTwilight = get_bool(config.excludePalaceOfTwilight, true);
     // Keep the linkage policy in the mod: the host only exposes its current
     // master multiplier and applies the value sent here to the streamed mix.
     music::set_volume(g_runtime.musicVolume * compat::get_master_volume());
@@ -97,7 +99,7 @@ s16 provide_enemy_proc(s16 procName) {
         return procName;
     }
 
-    if (!active() || stage == nullptr || std::strncmp(stage, "D_MN08", 6) == 0 ||
+    if (!active() || stage == nullptr || palace_excluded() ||
         layer == 14 || g_kingBulblinEncounter) {
         return procName;
     }
@@ -124,9 +126,22 @@ bool king_bulblin_encounter_active() {
     return g_kingBulblinEncounter || is_king_bulblin_stage(dComIfGp_getStartStageName());
 }
 
+bool custom_music_allowed() {
+    // Vanilla reserves this entire story window for Midna's Lament. Do not let a visual preset
+    // replace it between Zant's attack and Midna's revival by Zelda.
+    return !dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[104]) ||
+           dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[250]);
+}
+
+bool palace_excluded() {
+    const char* stage = dComIfGp_getStartStageName();
+    return g_runtime.excludePalaceOfTwilight && stage != nullptr &&
+           std::strncmp(stage, "D_MN08", 6) == 0;
+}
+
 s32 provide_environment_layer(s32 currentLayer) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || stage == nullptr || std::strncmp(stage, "D_MN08", 6) == 0) {
+    if (!active() || stage == nullptr || palace_excluded()) {
         return -1;
     }
     return 14;
@@ -134,7 +149,7 @@ s32 provide_environment_layer(s32 currentLayer) {
 
 u8 provide_bloom_profile(u8 defaultProfile) {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && stage && std::strncmp(stage, "D_MN08", 6) != 0 &&
+    return active() && stage && !palace_excluded() &&
         !daPy_py_c::checkNowWolfPowerUp() && g_env_light.field_0x12fc < 0 ? 1 : defaultProfile;
 }
 
@@ -145,8 +160,10 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
     (void)room;
     (void)layer;
     const bool darkHourPreset = g_runtime.style == Style::DarkHour;
-    if (!active() || spot == nullptr || (inDarkness && !darkHourPreset) ||
-        (spot[0] != 'F' && spot[0] != 'R') ||
+    const bool palaceSpot = spot != nullptr && std::strncmp(spot, "D_MN08", 6) == 0;
+    if (!active() || !custom_music_allowed() || spot == nullptr ||
+        (inDarkness && !darkHourPreset) ||
+        (!palaceSpot && spot[0] != 'F' && spot[0] != 'R') ||
         (demoWave != 0 && sceneNo != Z2SCENE_KAKARIKO_VILLAGE)) {
         return false;
     }
@@ -176,7 +193,7 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
         sceneNo == Z2SCENE_FINAL_BATTLE_THRONE_ROOM ||
         sceneNo == Z2SCENE_FINAL_BATTLE_FIELD ||
         sceneNo == Z2SCENE_FINAL_BATTLE_CUTSCENE;
-    if (palaceScene || preservedScene) return false;
+    if ((g_runtime.excludePalaceOfTwilight && palaceScene) || preservedScene) return false;
 
     if (bgmId != nullptr) *bgmId = Z2BGM_DUNGEON_LV8;
     if (bgmWave1 != nullptr) *bgmWave1 = 0x28;
@@ -190,7 +207,7 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
 void provide_audio_sequence(DuskTwilightAudioSequenceV1* state) {
     if (state == nullptr) return;
 
-    const bool enabled = active();
+    const bool enabled = active() && custom_music_allowed();
     state->enabled = enabled;
     state->replacementScene = enabled && state->sceneMusicForced;
     state->customMusicEligible = state->replacementScene && state->safeMusicEvent &&
@@ -215,7 +232,7 @@ bool provide_grass(bool* monochrome) {
     if (monochrome == nullptr) return false;
     const char* stage = dComIfGp_getStartStageName();
     *monochrome = active() && g_runtime.style == Style::BlackAndWhite &&
-        stage != nullptr && std::strncmp(stage, "D_MN08", 6) != 0;
+        stage != nullptr && !palace_excluded();
     return true;
 }
 

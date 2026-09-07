@@ -19,7 +19,7 @@ void draw_astral_chromatic_aberration() {
     const auto& cfg = runtime_settings();
     const char* stage = dComIfGp_getStartStageName();
     if (!active() || cfg.style != Style::AstralPlane || stage == nullptr ||
-        std::strncmp(stage, "D_MN08", 6) == 0) return;
+        palace_excluded()) return;
     const f32 strength = std::clamp(cfg.chromaticAberration, 0, 200) / 100.0f;
     const u16 width = mDoGph_gInf_c::getWidth();
     const u16 height = mDoGph_gInf_c::getHeight();
@@ -89,4 +89,3 @@ void bloom_draw_post(ModContext*, void*, void*, void*) { draw_astral_chromatic_a
 ModResult install_hooks() { return mods::hook::add_post<BloomDraw>(bloom_draw_post); }
 void uninstall_hooks() { mods::hook::uninstall<BloomDraw>(); }
 }
-

@@ -23,6 +23,7 @@ bool previousUpdateStartedRolling = false;
 bool justFinishedRoll = false;
 unsigned transformTraceFrames = 0;
 bool* humanWarpRequest = nullptr;
+bool humanSensesOwned = false;
 bool player_ready(daAlink_c* p) {
     return p != nullptr &&
         p == static_cast<daAlink_c*>(dComIfGp_getPlayer(0)) &&
@@ -123,7 +124,24 @@ HookAction input_pre(ModContext*, void* args, void*, void*) {
         justFinishedRoll = false;
         inputSampled = false;
         transformTraceFrames = 0;
+        humanSensesOwned = false;
         return HOOK_CONTINUE;
+    }
+    const bool humanSensesEnabled = active() && runtime_settings().humanWolfSenses;
+    if (humanSensesOwned && (!humanSensesEnabled || p->checkWolf())) {
+        if (!p->checkWolf()) p->offWolfEyeUp();
+        humanSensesOwned = false;
+    }
+    if (humanSensesEnabled && !p->checkWolf() && !p->checkEventRun() &&
+        dComIfGs_isEventBit(dSv_event_flag_c::F_0550) && mDoCPd_c::getTrigDown(PAD_1)) {
+        if (p->checkWolfEyeUp()) {
+            p->offWolfEyeUp();
+            humanSensesOwned = false;
+        } else {
+            p->onWolfEyeUp();
+            humanSensesOwned = true;
+        }
+        mDoCPd_c::getCpadInfo(PAD_1).mPressedButtonFlags &= ~PAD_BUTTON_DOWN;
     }
     if (p->mProcID == daAlink_c::PROC_METAMORPHOSE ||
         p->mProcID == daAlink_c::PROC_METAMORPHOSE_ONLY) {

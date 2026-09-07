@@ -60,7 +60,7 @@ bool g_windGustActive{};
 
 bool environment_active() {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && stage != nullptr && std::strncmp(stage, "D_MN08", 6) != 0;
+    return active() && stage != nullptr && !palace_excluded();
 }
 
 void restore_weather() {

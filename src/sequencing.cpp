@@ -22,7 +22,7 @@ s32 query(DuskSequenceEvent point) {
     if (point == DuskSequence_IsReplacementScene) return forced;
     if (point == DuskSequence_IsRefreshPending) return pending;
     if (point == DuskSequence_MusicStatusOverride) return forced ? status : -1;
-    if (point == DuskSequence_UseTwilightBattleMusic) return active();
+    if (point == DuskSequence_UseTwilightBattleMusic) return active() && custom_music_allowed();
     if (point == DuskSequence_IsBgmOnlyRefresh) return musicOnlyRefresh;
     if (point == DuskSequence_OnWaveRefreshFinished) musicOnlyRefresh = false;
     if (point == DuskSequence_OnSceneBgmStarted && restoreAfterRefresh >= 0) {
@@ -32,7 +32,7 @@ s32 query(DuskSequenceEvent point) {
     return 0;
 }
 void tick() {
-    const bool enabled = active();
+    const bool enabled = active() && custom_music_allowed();
     if (enabled == previousEnabled && !(enabled && pending)) return;
     if (!scene_manager() || !sequence_manager() || !status_manager() ||
         !scene_manager()->isSceneExist() || dComIfGp_isEnableNextStage() ||
@@ -80,10 +80,18 @@ void update(void* raw, f32 base) {
 }
 bool scene(const char* spot,s32 room,s32 layer,s32 sceneNo,bool darkness,u8 demoWave,
            u32* bgm,u8* wave1,u8* wave2,bool* streams,bool* field,s32* musicStatus) {
-    forced = pending = false;
+    const bool priorForced = forced;
+    pending = false;
     if (!refreshingSelection) music::prepare_scene();
     if (!status_manager() || !sequence_manager()) return false;
-    if (!provide_scene_music(spot,room,layer,sceneNo,darkness,demoWave,bgm,wave1,wave2,streams,field,musicStatus)) return false;
+    if (!provide_scene_music(spot,room,layer,sceneNo,darkness,demoWave,bgm,wave1,wave2,streams,field,musicStatus)) {
+        // Keep suppressing the Palace placeholder while a load-zone callback is exposing
+        // incomplete destination state. A stable callback still restores native music normally.
+        const bool transientLoad = dComIfGp_isEnableNextStage() || dComIfGp_event_runCheck() ||
+                                   demoWave != 0;
+        forced = priorForced && active() && transientLoad;
+        return false;
+    }
     pending = status_manager()->getDemoStatus() != 0;
     if (!pending) {
         forced = true;

@@ -105,7 +105,7 @@ u8 query(DuskEnvironmentQuery kind, u8 nativeValue) {
     // A snapshot taken under an override is not a reliable native answer.
     if (!active() || restoring) return nativeValue;
     const char* stage = dComIfGp_getStartStageName();
-    const bool palace = stage && std::strncmp(stage, "D_MN08", 6) == 0;
+    const bool palace = palace_excluded();
     if (kind == DuskEnvironment_ActorTwilight) {
         // King Bulblin's encounter controller and supporting actors use their native form/state
         // checks to initialize the fight. Keep those checks untouched while retaining the visual

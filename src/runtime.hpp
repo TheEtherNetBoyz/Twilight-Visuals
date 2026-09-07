@@ -54,6 +54,8 @@ struct RuntimeSettings {
     Weather weather{Weather::Current};
     float musicVolume{1.0f};
     bool skywardSwordRunning{};
+    bool humanWolfSenses{};
+    bool excludePalaceOfTwilight{true};
 };
 
 const RuntimeSettings& runtime_settings();
@@ -63,6 +65,8 @@ void provide_visual_state(u8* enabled, u8* style, f32* brightness,
                           u8* alternateRun);
 s16 provide_enemy_proc(s16 procName);
 bool king_bulblin_encounter_active();
+bool custom_music_allowed();
+bool palace_excluded();
 s32 provide_environment_layer(s32 currentLayer);
 u8 provide_bloom_profile(u8 defaultProfile);
 bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,

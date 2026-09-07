@@ -101,7 +101,7 @@ f32 bloom_gain() {
 void after_background(void* viewRaw, void* viewportRaw) {
     const char* stage = dComIfGp_getStartStageName();
     if (!active() || runtime_settings().style != Style::BlackAndWhite ||
-        !stage || std::strcmp(stage, "D_MN08") == 0) return;
+        !stage || palace_excluded()) return;
     auto* view = static_cast<view_class*>(viewRaw);
     auto* viewport = static_cast<view_port_class*>(viewportRaw);
     draw_monochrome_background();

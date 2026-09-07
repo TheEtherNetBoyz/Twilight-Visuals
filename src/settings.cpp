@@ -105,6 +105,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         5, "%");
     add_select(left, "Skybox", "Choose the authored sky palette used by Twilight Visuals.",
         g_settings.skybox, kSkyboxes);
+    add_toggle(left, "Exclude Palace of Twilight",
+        "Keep the Palace of Twilight's native visuals and music instead of applying the selected "
+        "Twilight Visuals preset.",
+        g_settings.excludePalaceOfTwilight);
 
     svc_ui->pane_add_section(mod_ctx, left, "Music");
     add_number(left, "Custom Music Volume",
@@ -120,6 +124,9 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Hold A while moving as human Link to run at 37 units. Includes the custom attack, roll, "
         "snow, and Magic Armor water-running behavior.",
         g_settings.skywardSwordRunning);
+    add_toggle(left, "Wolf Senses as Human",
+        "Press D-pad Down as human Link to toggle Wolf Senses after the ability has been unlocked.",
+        g_settings.humanWolfSenses);
     return MOD_OK;
 }
 
@@ -167,7 +174,11 @@ ModResult register_settings(ModError*) {
     result = register_int("music-volume", 100, g_settings.musicVolume);
     if (result != MOD_OK) return result;
     result = register_bool("skyward-sword-running", false, g_settings.skywardSwordRunning);
-    return result;
+    if (result != MOD_OK) return result;
+    result = register_bool("human-wolf-senses", false, g_settings.humanWolfSenses);
+    if (result != MOD_OK) return result;
+    return register_bool("exclude-palace-of-twilight", true,
+        g_settings.excludePalaceOfTwilight);
 }
 
 ModResult register_quick_menu_tab(ModError*) {

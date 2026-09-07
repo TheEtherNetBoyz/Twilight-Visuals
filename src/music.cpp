@@ -90,8 +90,10 @@ struct Track {
             position = 0;
         }
     }
-    void mix(float* output, u32 frames, u32 rate, float calibration, float volume) {
-        if (!available || !playbackStarted || !rate) return;
+    void mix(float* output, u32 frames, u32 rate, float calibration, float volume,
+             bool pauseWhenSilent = false) {
+        if (!available || !playbackStarted || !rate ||
+            (pauseWhenSilent && audibleGain <= 0.0001f)) return;
         if (!primed) {
             if (!next(a) || !next(b)) return;
             primed = true;
@@ -169,7 +171,7 @@ void update_sequence(bool replacementScene, bool eligible, int musicMode,
         fade.astral() * encounterFade.palace() : 0.0f, elapsed, false, false, sceneStart);
     DarkHourCombat.setGain(replaceDarkHourBattle && battleActive ?
         std::clamp(battleVolume, 0.0f, 1.0f) * fade.astral() * encounterFade.astral() : 0.0f,
-        elapsed, true, true, sceneStart);
+        elapsed, true, false, sceneStart);
     if (sceneStart && eligible && gain > 0.0f) sceneStartPending.store(false);
 }
 
@@ -179,7 +181,9 @@ void mix(float* output, u32 frames, u32 rate) {
     AstralMp3Ambient.mix(output, frames, rate, 0.85f, volume);
     AstralMp3Combat.mix(output, frames, rate, 0.85f, volume);
     DarkHourAmbient.mix(output, frames, rate, 0.65f, volume);
-    DarkHourCombat.mix(output, frames, rate, 0.65f, volume);
+    // Preserve the combat track's decoder position between encounters. It advances during the
+    // outro fade, pauses once silent, and resumes from that point on the next battle.
+    DarkHourCombat.mix(output, frames, rate, 0.65f, volume, true);
 }
 float channel_gain(u32 channel) {
     if (channel == Z2BGM_DUNGEON_LV8) return PalaceGain.load();
