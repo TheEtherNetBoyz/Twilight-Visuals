@@ -114,6 +114,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_number(left, "Custom Music Volume",
         "Adjust Astral Plane and Dark Hour replacement music volume.",
         g_settings.musicVolume, 0, 100, 5, "%");
+    add_toggle(left, "Override Temple Music",
+        "Use the selected visual preset's music in temples and dungeons. Boss and miniboss "
+        "themes remain unchanged.",
+        g_settings.overrideTempleMusic);
 
     svc_ui->pane_add_section(mod_ctx, left, "Weather");
     add_select(left, "Weather", "Override weather independently from the visual toggle.",
@@ -172,6 +176,8 @@ ModResult register_settings(ModError*) {
     result = register_int("weather", 0, g_settings.weather);
     if (result != MOD_OK) return result;
     result = register_int("music-volume", 100, g_settings.musicVolume);
+    if (result != MOD_OK) return result;
+    result = register_bool("override-temple-music", false, g_settings.overrideTempleMusic);
     if (result != MOD_OK) return result;
     result = register_bool("skyward-sword-running", false, g_settings.skywardSwordRunning);
     if (result != MOD_OK) return result;

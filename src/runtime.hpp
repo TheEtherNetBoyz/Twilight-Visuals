@@ -53,6 +53,7 @@ struct RuntimeSettings {
     Skybox skybox{Skybox::TwilightDay};
     Weather weather{Weather::Current};
     float musicVolume{1.0f};
+    bool overrideTempleMusic{};
     bool skywardSwordRunning{};
     bool humanWolfSenses{};
     bool excludePalaceOfTwilight{true};
@@ -66,6 +67,7 @@ void provide_visual_state(u8* enabled, u8* style, f32* brightness,
 s16 provide_enemy_proc(s16 procName);
 bool king_bulblin_encounter_active();
 bool custom_music_allowed();
+bool music_override_allowed();
 bool palace_excluded();
 s32 provide_environment_layer(s32 currentLayer);
 u8 provide_bloom_profile(u8 defaultProfile);

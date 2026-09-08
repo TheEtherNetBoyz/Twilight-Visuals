@@ -12,6 +12,7 @@ struct Settings {
     ConfigVarHandle skybox{};
     ConfigVarHandle weather{};
     ConfigVarHandle musicVolume{};
+    ConfigVarHandle overrideTempleMusic{};
     ConfigVarHandle skywardSwordRunning{};
     ConfigVarHandle humanWolfSenses{};
     ConfigVarHandle excludePalaceOfTwilight{};

@@ -20,6 +20,20 @@ bool g_kingBulblinEncounter = false;
 char g_enemyProcStage[16] = {};
 s32 g_enemyProcRoom = -128;
 s32 g_enemyProcLayer = -128;
+bool g_musicSceneTemple = false;
+bool g_musicScenePalace = false;
+
+bool is_palace_music_stage(const char* stage) {
+    return stage != nullptr && std::strncmp(stage, "D_MN08", 6) == 0;
+}
+
+bool is_temple_music_stage(const char* stage) {
+    // Dungeon scene numbers can temporarily describe the source scene while a load-zone
+    // transition is in progress. Stage names are stable for the loaded map, so use the D_MN
+    // identity as the authoritative music scope. Palace has its own independent exclusion.
+    return stage != nullptr && std::strncmp(stage, "D_MN", 4) == 0 &&
+           !is_palace_music_stage(stage);
+}
 
 bool is_king_bulblin_stage(const char* stage) {
     if (stage == nullptr) return false;
@@ -53,6 +67,7 @@ void refresh_runtime_settings() {
     g_runtime.musicVolume =
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.musicVolume, 100), 0, 100)) /
         100.0f;
+    g_runtime.overrideTempleMusic = get_bool(config.overrideTempleMusic);
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
     g_runtime.humanWolfSenses = get_bool(config.humanWolfSenses);
     g_runtime.excludePalaceOfTwilight = get_bool(config.excludePalaceOfTwilight, true);
@@ -133,6 +148,22 @@ bool custom_music_allowed() {
            dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[250]);
 }
 
+bool music_override_allowed() {
+    if (!custom_music_allowed()) return false;
+    const char* stage = dComIfGp_getStartStageName();
+    if (stage != nullptr && *stage != '\0') {
+        if (is_palace_music_stage(stage))
+            return g_runtime.overrideTempleMusic && !g_runtime.excludePalaceOfTwilight;
+        if (is_temple_music_stage(stage)) return g_runtime.overrideTempleMusic;
+        return true;
+    }
+    // Scene-provider state is only a fallback while no current stage is available.
+    if (g_musicScenePalace)
+        return g_runtime.overrideTempleMusic && !g_runtime.excludePalaceOfTwilight;
+    if (g_musicSceneTemple) return g_runtime.overrideTempleMusic;
+    return true;
+}
+
 bool palace_excluded() {
     const char* stage = dComIfGp_getStartStageName();
     return g_runtime.excludePalaceOfTwilight && stage != nullptr &&
@@ -159,17 +190,31 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
                          s32* musicStatus) {
     (void)room;
     (void)layer;
-    const bool darkHourPreset = g_runtime.style == Style::DarkHour;
-    const bool palaceSpot = spot != nullptr && std::strncmp(spot, "D_MN08", 6) == 0;
+    (void)inDarkness;
+    const bool palaceSpot = is_palace_music_stage(spot);
+    const bool templeScene = is_temple_music_stage(spot) ||
+        sceneNo == Z2SCENE_FOREST_TEMPLE ||
+        sceneNo == Z2SCENE_GORON_MINES ||
+        sceneNo == Z2SCENE_LAKEBED_TEMPLE ||
+        sceneNo == Z2SCENE_ARBITERS_GROUNDS ||
+        sceneNo == Z2SCENE_SNOWPEAK_RUINS ||
+        sceneNo == Z2SCENE_TEMPLE_OF_TIME ||
+        sceneNo == Z2SCENE_CITY_IN_THE_SKY ||
+        sceneNo == Z2SCENE_HYRULE_CASTLE;
+    const bool palaceScene = sceneNo >= Z2SCENE_PALACE_OF_TWILIGHT &&
+                             sceneNo <= Z2SCENE_PALACE_OF_TWILIGHT_BOSS;
+    const bool palaceMusicScene = palaceScene || palaceSpot;
+    const bool templeMusicScene = templeScene || palaceMusicScene;
+    g_musicSceneTemple = templeMusicScene;
+    g_musicScenePalace = palaceMusicScene;
     if (!active() || !custom_music_allowed() || spot == nullptr ||
-        (inDarkness && !darkHourPreset) ||
-        (!palaceSpot && spot[0] != 'F' && spot[0] != 'R') ||
+        (templeMusicScene && !g_runtime.overrideTempleMusic) ||
+        (!palaceSpot && spot[0] != 'F' && spot[0] != 'R' &&
+            !(g_runtime.overrideTempleMusic && templeMusicScene)) ||
         (demoWave != 0 && sceneNo != Z2SCENE_KAKARIKO_VILLAGE)) {
         return false;
     }
 
-    const bool palaceScene = sceneNo >= Z2SCENE_PALACE_OF_TWILIGHT &&
-                             sceneNo <= Z2SCENE_PALACE_OF_TWILIGHT_BOSS;
     const bool preservedScene =
         sceneNo == Z2SCENE_HYLIA_BRIDGE_BATTLE ||
         sceneNo == Z2SCENE_ELDIN_BRIDGE_BATTLE ||
@@ -187,13 +232,10 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
         sceneNo == Z2SCENE_TEMPLE_OF_TIME_BOSS ||
         sceneNo == Z2SCENE_CITY_IN_THE_SKY_MINIBOSS ||
         sceneNo == Z2SCENE_CITY_IN_THE_SKY_BOSS ||
-        sceneNo == Z2SCENE_PALACE_OF_TWILIGHT_MINIBOSS_A ||
-        sceneNo == Z2SCENE_PALACE_OF_TWILIGHT_MINIBOSS_B ||
-        sceneNo == Z2SCENE_PALACE_OF_TWILIGHT_BOSS ||
         sceneNo == Z2SCENE_FINAL_BATTLE_THRONE_ROOM ||
         sceneNo == Z2SCENE_FINAL_BATTLE_FIELD ||
         sceneNo == Z2SCENE_FINAL_BATTLE_CUTSCENE;
-    if ((g_runtime.excludePalaceOfTwilight && palaceScene) || preservedScene) return false;
+    if ((g_runtime.excludePalaceOfTwilight && palaceMusicScene) || preservedScene) return false;
 
     if (bgmId != nullptr) *bgmId = Z2BGM_DUNGEON_LV8;
     if (bgmWave1 != nullptr) *bgmWave1 = 0x28;
@@ -207,7 +249,7 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
 void provide_audio_sequence(DuskTwilightAudioSequenceV1* state) {
     if (state == nullptr) return;
 
-    const bool enabled = active() && custom_music_allowed();
+    const bool enabled = active() && music_override_allowed();
     state->enabled = enabled;
     state->replacementScene = enabled && state->sceneMusicForced;
     state->customMusicEligible = state->replacementScene && state->safeMusicEvent &&
