@@ -9,6 +9,8 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
 #include "d/d_kankyo_wether.h"
+#include "d/actor/d_a_player.h"
+#include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
 #include "m_Do/m_Do_audio.h"
 #include "SSystem/SComponent/c_math.h"
@@ -285,6 +287,28 @@ void tint_astral_light(J3DLightObj& light, bool redAccent) {
         std::clamp(luma * (redAccent ? 0.28f : 1.05f), 0.0f, 255.0f));
 }
 
+void adjust_high_camera_fog(float& fogNear, float& fogFar) {
+    auto* camera = static_cast<camera_process_class*>(dComIfGp_getCamera(0));
+    auto* player = dComIfGp_getLinkPlayer();
+    if (camera == nullptr || player == nullptr || fogFar <= 1.0f) return;
+
+    // Overhead puzzle cameras make the floor geometrically distant even though it is the
+    // gameplay foreground. Move only the fog start outward as camera height increases; retain
+    // the authored fog end so mountains and other genuinely distant geometry stay concealed.
+    const float height = std::max(0.0f, camera->view.lookat.eye.y - player->current.pos.y);
+    const float blend = std::clamp((height - 700.0f) / 2300.0f, 0.0f, 1.0f);
+    if (blend <= 0.0f) return;
+
+    // A 500-2000 unit authored end plane becomes an opaque screen in top-down views. Expand
+    // the visible depth with camera altitude, then keep the final 22% as the same colored fog.
+    const float originalNear = fogNear;
+    const float expandedFar = std::max(fogFar, 24000.0f);
+    fogFar += (expandedFar - fogFar) * blend;
+    const float expandedNear = fogFar * 0.78f;
+    fogNear = std::clamp(originalNear + (expandedNear - originalNear) * blend,
+                         0.0f, fogFar - 1.0f);
+}
+
 void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
     if (!environment_active()) return;
     if (runtime_settings().style == Style::AstralPlane) {
@@ -299,6 +323,7 @@ void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
         fogFar = std::clamp(fogFar > 100.0f ? fogFar : 9000.0f, 500.0f, 9000.0f);
         const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.20f;
         fogNear = std::clamp(std::min(authoredNear, fogFar * 0.28f), 0.0f, fogFar - 1.0f);
+        adjust_high_camera_fog(fogNear, fogFar);
     } else if (runtime_settings().style == Style::DarkHour) {
         const GXColorS10& ambient = g_env_light.bg_amb_col[0];
         const float luma =
@@ -309,6 +334,7 @@ void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
         fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7000.0f, 500.0f, 7000.0f);
         const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.18f;
         fogNear = std::clamp(std::min(authoredNear, fogFar * 0.24f), 0.0f, fogFar - 1.0f);
+        adjust_high_camera_fog(fogNear, fogFar);
     }
 }
 
