@@ -113,15 +113,17 @@ struct Track {
         }
     }
 };
-Track AstralMp3Ambient, AstralMp3Combat, DarkHourAmbient, DarkHourCombat;
+Track AstralMp3Ambient, AstralMp3Combat, DarkHourAmbient, DarkHourCombat, MasterOfShadow;
 std::atomic<float> TwilightMusicVolume{1};
-std::atomic<float> PalaceGain{1}, BattleGain{1};
+std::atomic<float> PalaceGain{1}, BattleGain{1}, BossGain{1};
+std::atomic<u32> BossNativeMain{0xffffffff}, BossNativeSub{0xffffffff};
 bool registered = false;
 std::atomic<bool> sceneStartPending{true};
-TwilightMusicFade fade, encounterFade;
+TwilightMusicFade fade, encounterFade, bossFade;
 std::chrono::steady_clock::time_point lastTick{};
 void update_sequence(bool replacementScene, bool eligible, int musicMode,
-                                    float gain, bool battleScope, bool battleActive, float battleVolume) {
+                     float gain, bool battleScope, bool battleActive, float battleVolume,
+                     bool bossActive, float bossVolume, u32 bossMain, u32 bossSub) {
     const auto tick = std::chrono::steady_clock::now();
     const float elapsed = lastTick.time_since_epoch().count() == 0 ? 0.0f :
         std::chrono::duration<float>(tick - lastTick).count();
@@ -132,6 +134,7 @@ void update_sequence(bool replacementScene, bool eligible, int musicMode,
     const bool combatReady = AstralMp3Combat.available;
     const bool darkHourReady = DarkHourAmbient.available;
     const bool darkHourCombatReady = DarkHourCombat.available;
+    const bool bossReady = MasterOfShadow.available;
     const bool selectionScope = replacementScene || battleScope;
     const bool customSelected = astral || darkHour;
     const bool selectionReady = astral ? ready : (darkHour && darkHourReady);
@@ -152,26 +155,36 @@ void update_sequence(bool replacementScene, bool eligible, int musicMode,
     // the exclusive handoff so the two Astral tracks never play over each other.
     if (sceneStart) encounterFade.position = enteringCombat ? 1.0f : 0.0f;
     else encounterFade.update(enteringCombat, elapsed, enteringCombat ? 2.0f : 3.0f);
+    bossFade.update(bossActive && bossReady, elapsed, 1.5f);
+    if (bossActive) {
+        BossNativeMain.store(bossMain);
+        BossNativeSub.store(bossSub);
+    }
     // Keep the replacement Palace sequence silent through interruptions and
     // AST preparation. Native Palace areas are outside replacementScene.
     PalaceGain.store(replacementScene && currentTrackReady ? fade.palace() : 1.0f);
     // Gate all ordinary battle sequences at their native channel output,
     // including detached fade-out tails. Never tag boss/miniboss themes.
     BattleGain.store(replaceBattle ? fade.palace() : 1.0f);
+    BossGain.store(bossReady ? bossFade.palace() : 1.0f);
     // Zero volume is deliberately NOT stop or pause. The native loop and its
     // sample position keep advancing through battles, menus and track changes.
-    const float targetGain = astral && eligible && ready && (!battleActive || replaceAstralBattle) ?
+    const float targetGain = astral && eligible && ready && !bossActive &&
+        (!battleActive || replaceAstralBattle) ?
         std::clamp(gain, 0.0f, 1.0f) * fade.astral() * encounterFade.palace() : 0.0f;
     // Gentle re-entry, immediate reductions: never let a fade-out trail cross
     // the exclusive handoff into Palace or protected music.
     AstralMp3Ambient.setGain(targetGain, elapsed, false, false, sceneStart);
-    AstralMp3Combat.setGain(astral && replaceAstralBattle ? std::clamp(battleVolume, 0.0f, 1.0f) *
+    AstralMp3Combat.setGain(astral && replaceAstralBattle && !bossActive ? std::clamp(battleVolume, 0.0f, 1.0f) *
         fade.astral() * encounterFade.astral() : 0.0f, elapsed, true, true, sceneStart);
-    DarkHourAmbient.setGain(darkHour && eligible && darkHourReady ? std::clamp(gain, 0.0f, 1.0f) *
+    DarkHourAmbient.setGain(darkHour && eligible && darkHourReady && !bossActive ? std::clamp(gain, 0.0f, 1.0f) *
         fade.astral() * encounterFade.palace() : 0.0f, elapsed, false, false, sceneStart);
-    DarkHourCombat.setGain(replaceDarkHourBattle && battleActive ?
+    DarkHourCombat.setGain(replaceDarkHourBattle && battleActive && !bossActive ?
         std::clamp(battleVolume, 0.0f, 1.0f) * fade.astral() * encounterFade.astral() : 0.0f,
         elapsed, true, false, sceneStart);
+    MasterOfShadow.setGain(bossActive && bossReady ?
+        std::clamp(bossVolume, 0.0f, 1.0f) * bossFade.astral() : 0.0f,
+        elapsed, true, !bossActive, sceneStart);
     if (sceneStart && eligible && gain > 0.0f) sceneStartPending.store(false);
 }
 
@@ -184,12 +197,85 @@ void mix(float* output, u32 frames, u32 rate) {
     // Preserve the combat track's decoder position between encounters. It advances during the
     // outro fade, pauses once silent, and resumes from that point on the next battle.
     DarkHourCombat.mix(output, frames, rate, 0.65f, volume, true);
+    // Mix the replacement separately, then fit it around every existing native sample. This
+    // keeps game voices and effects bit-for-bit intact and prevents the MP3 from clipping over
+    // them without applying a buffer-wide duck or delaying the start of the boss track.
+    std::array<float, 4096> bossMix{};
+    u32 offset = 0;
+    while (offset < frames) {
+        const u32 chunk = std::min<u32>(frames - offset, bossMix.size() / 2);
+        std::fill_n(bossMix.data(), chunk * 2, 0.0f);
+        // The native boss sequence is muted below, so the signal already in
+        // output is game SFX/voices/ambience. Side-chain only the replacement
+        // music around that signal; never attenuate or overwrite native audio.
+        float nativePeak = 0.0f;
+        for (u32 i = 0; i < chunk * 2; ++i) {
+            nativePeak = std::max(nativePeak, std::abs(output[offset * 2 + i]));
+        }
+        const float sfxDuck = std::clamp(1.0f - nativePeak * 1.25f, 0.28f, 1.0f);
+        MasterOfShadow.mix(bossMix.data(), chunk, rate, 0.75f * sfxDuck, volume, true);
+        for (u32 i = 0; i < chunk * 2; ++i) {
+            const u32 outputIndex = offset * 2 + i;
+            const float native = output[outputIndex];
+            const float room = std::max(0.0f, 1.0f - std::abs(native));
+            output[outputIndex] = native + std::clamp(bossMix[i], -room, room);
+        }
+        offset += chunk;
+    }
 }
 float channel_gain(u32 channel) {
     if (channel == Z2BGM_DUNGEON_LV8) return PalaceGain.load();
     if (channel == Z2BGM_BATTLE_NORMAL || channel == Z2BGM_BATTLE_TWILIGHT) return BattleGain.load();
+    // Mute the native boss score while the streamed replacement fades in.
+    // Ordinary action SFX use the SE buses and are deliberately unaffected.
+    // 0xffffffff means "no sequence" and is also the default tag carried by
+    // many non-BGM tracks. Never compare that sentinel as a real boss ID or it
+    // will silence Link, enemy, and item sounds along with the music.
+    const u32 bossMain = BossNativeMain.load();
+    const u32 bossSub = BossNativeSub.load();
+    const bool savedBoss = (bossMain != 0xffffffff && channel == bossMain) ||
+                           (bossSub != 0xffffffff && channel == bossSub);
+    if (is_boss_bgm(channel) || savedBoss) return BossGain.load();
     return 1.0f;
 }
+}
+bool is_boss_bgm(u32 id) {
+    switch (id) {
+    case Z2BGM_FACE_OFF_BATTLE:
+    case Z2BGM_BOOMERAMG_MONKEY:
+    case Z2BGM_BOSSBABA_0:
+    case Z2BGM_BOSSBABA_1:
+    case Z2BGM_BOSSBABA_2:
+    case Z2BGM_BOSSFIREMAN_0:
+    case Z2BGM_BOSSFIREMAN_1:
+    case Z2BGM_MAGNE_GORON:
+    case Z2BGM_DEKUTOAD:
+    case Z2BGM_BOSS_OCTAEEL_0:
+    case Z2BGM_BOSS_OCTAEEL_1:
+    case Z2BGM_VARIANT:
+    case Z2BGM_BOSS_SNOWWOMAN_0:
+    case Z2BGM_BOSS_SNOWWOMAN_1:
+    case Z2BGM_IB_MBOSS:
+    case Z2BGM_BOSS_ZANT:
+    case Z2BGM_TN_MBOSS:
+    case Z2BGM_GG_MBOSS:
+    case Z2BGM_P_ZANT:
+    case Z2BGM_VS_GANON_01:
+    case Z2BGM_VS_GANON_02:
+    case Z2BGM_VS_GANON_04:
+    case Z2BGM_HARAGIGANT_BTL01:
+    case Z2BGM_HARAGIGANT_BTL02:
+    case Z2BGM_DRAGON_BTL01:
+    case Z2BGM_DRAGON_BTL02:
+    case Z2BGM_GOMA_BTL01:
+    case Z2BGM_GOMA_BTL02:
+    case Z2BGM_FACE_OFF_BATTLE2:
+    case Z2BGM_FACE_OFF_BATTLE3:
+    case Z2BGM_TN_MBOSS_LV9:
+        return true;
+    default:
+        return false;
+    }
 }
 ModResult initialize() {
     const auto* api = compat::host_api();
@@ -204,6 +290,7 @@ ModResult initialize() {
     AstralMp3Combat.open(directory / L"Astral Plane CM.mp3");
     DarkHourAmbient.open(directory / L"tartarus 0d06.mp3");
     DarkHourCombat.open(directory / L"Mass Destruction.mp3");
+    MasterOfShadow.open(directory / L"Master of Shadow.mp3");
     const DuskAudioHooksV1 hooks{mix, channel_gain};
     api->setAudioHooks(&hooks);
     registered = true;
@@ -211,8 +298,10 @@ ModResult initialize() {
 }
 void set_volume(float value) { TwilightMusicVolume.store(std::clamp(value, 0.0f, 1.0f)); }
 void prepare_scene() { sceneStartPending.store(true); }
-void sequence(bool scene, bool eligible, int mode, float gain, bool scope, bool battle, float battleVolume) {
-    update_sequence(scene, eligible, mode, gain, scope, battle, battleVolume);
+void sequence(bool scene, bool eligible, int mode, float gain, bool scope, bool battle,
+              float battleVolume, bool boss, float bossVolume, u32 bossMain, u32 bossSub) {
+    update_sequence(scene, eligible, mode, gain, scope, battle, battleVolume, boss, bossVolume,
+                    bossMain, bossSub);
 }
 void shutdown() {
     if (registered) {
@@ -223,11 +312,16 @@ void shutdown() {
     AstralMp3Combat.close();
     DarkHourAmbient.close();
     DarkHourCombat.close();
+    MasterOfShadow.close();
     fade = {};
     encounterFade = {};
+    bossFade = {};
     lastTick = {};
     sceneStartPending.store(true);
     PalaceGain.store(1);
     BattleGain.store(1);
+    BossGain.store(1);
+    BossNativeMain.store(0xffffffff);
+    BossNativeSub.store(0xffffffff);
 }
 }

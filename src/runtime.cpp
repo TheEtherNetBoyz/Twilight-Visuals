@@ -119,6 +119,13 @@ s16 provide_enemy_proc(s16 procName) {
         return procName;
     }
 
+    // Preserve the scripted Bulblin waiting in Ordon Spring after Link's first wolf
+    // transformation. Replacing this one actor with its Twilight variant changes the
+    // encounter behavior and can interfere with the story sequence.
+    if (procName == fpcNm_E_RD_e && std::strncmp(stage, "F_SP104", 7) == 0) {
+        return procName;
+    }
+
     switch (procName) {
     case fpcNm_E_RD_e:
         return fpcNm_E_RDY_e;
@@ -215,27 +222,8 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
         return false;
     }
 
-    const bool preservedScene =
-        sceneNo == Z2SCENE_HYLIA_BRIDGE_BATTLE ||
-        sceneNo == Z2SCENE_ELDIN_BRIDGE_BATTLE ||
-        sceneNo == Z2SCENE_FOREST_TEMPLE_MINIBOSS ||
-        sceneNo == Z2SCENE_FOREST_TEMPLE_BOSS ||
-        sceneNo == Z2SCENE_GORON_MINES_MINIBOSS ||
-        sceneNo == Z2SCENE_GORON_MINES_BOSS ||
-        sceneNo == Z2SCENE_LAKEBED_TEMPLE_MINIBOSS ||
-        sceneNo == Z2SCENE_LAKEBED_TEMPLE_BOSS ||
-        sceneNo == Z2SCENE_ARBITERS_GROUNDS_MINIBOSS ||
-        sceneNo == Z2SCENE_ARBITERS_GROUNDS_BOSS ||
-        sceneNo == Z2SCENE_SNOWPEAK_RUINS_MINIBOSS ||
-        sceneNo == Z2SCENE_SNOWPEAK_RUINS_BOSS ||
-        sceneNo == Z2SCENE_TEMPLE_OF_TIME_MINIBOSS ||
-        sceneNo == Z2SCENE_TEMPLE_OF_TIME_BOSS ||
-        sceneNo == Z2SCENE_CITY_IN_THE_SKY_MINIBOSS ||
-        sceneNo == Z2SCENE_CITY_IN_THE_SKY_BOSS ||
-        sceneNo == Z2SCENE_FINAL_BATTLE_THRONE_ROOM ||
-        sceneNo == Z2SCENE_FINAL_BATTLE_FIELD ||
-        sceneNo == Z2SCENE_FINAL_BATTLE_CUTSCENE;
-    if ((g_runtime.excludePalaceOfTwilight && palaceMusicScene) || preservedScene) return false;
+    if ((g_runtime.excludePalaceOfTwilight && palaceMusicScene) ||
+        sceneNo == Z2SCENE_FINAL_BATTLE_CUTSCENE) return false;
 
     if (bgmId != nullptr) *bgmId = Z2BGM_DUNGEON_LV8;
     if (bgmWave1 != nullptr) *bgmWave1 = 0x28;

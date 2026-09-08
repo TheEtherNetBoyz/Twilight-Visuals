@@ -8,6 +8,8 @@
 #include "Z2AudioLib/Z2StatusMgr.h"
 #include "m_Do/m_Do_Reset.h"
 #include "m_Do/m_Do_audio.h"
+#include "f_op/f_op_actor_mng.h"
+#include "f_pc/f_pc_name.h"
 namespace twilight_visuals::sequencing {
 namespace {
 Z2SceneMgr* scene_manager() { return static_cast<Z2SceneMgr*>(compat::host_api()->audioManager(DuskAudioManager_Scene)); }
@@ -18,6 +20,7 @@ s32 status = 0, originalStatus = -1;
 bool musicOnlyRefresh = false;
 bool refreshingSelection = false;
 s32 restoreAfterRefresh = -1;
+bool bossEncounterLatched = false;
 s32 query(DuskSequenceEvent point) {
     if (point == DuskSequence_IsReplacementScene) return forced;
     if (point == DuskSequence_IsRefreshPending) return pending;
@@ -61,12 +64,25 @@ void update(void* raw, f32 base) {
     if (!p || !status_manager() || !mDoRst::getResetData()) return;
     const u8 demo = status_manager()->getDemoStatus();
     const u32 sub = p->getSubBgmID();
+    const u32 main = p->getMainBgmID();
     const bool ordinary = sub == Z2BGM_BATTLE_NORMAL || sub == Z2BGM_BATTLE_TWILIGHT;
+    // Fyrus starts its score from actor state and the sequence ID is not
+    // consistently observable after the intro, especially when that demo is
+    // skipped. Once demo control has ended, the live Fyrus actor is an
+    // authoritative fallback for the active encounter.
+    const bool fyrusActive = demo == 0 && fopAcM_SearchByName(fpcNm_E_FM_e) != nullptr;
+    const bool detectedBoss = music::is_boss_bgm(main) || music::is_boss_bgm(sub) || fyrusActive;
+    const bool fanfareActive = p->mFanfareMute.get() < 0.999f ||
+                               p->mFanfareMute.getDest() < 0.999f;
+    if (detectedBoss) bossEncounterLatched = true;
+    else if (!fanfareActive) bossEncounterLatched = false;
+    const bool boss = active() && custom_music_allowed() && !palace_excluded() &&
+        bossEncounterLatched;
     const bool safe = (demo == 0 || demo == 1) && p->getStreamBgmID() == 0xffffffff && !mDoRst::isReset();
     DuskTwilightAudioSequenceV1 state{};
     state.sceneMusicForced = forced;
     state.safeMusicEvent = safe;
-    state.mainReplacementReady = p->mMainBgmHandle && p->getMainBgmID() == Z2BGM_DUNGEON_LV8 && p->mSceneBgm.get() > 0;
+    state.mainReplacementReady = p->mMainBgmHandle && main == Z2BGM_DUNGEON_LV8 && p->mSceneBgm.get() > 0;
     state.ordinaryBattle = ordinary;
     state.battleFlagActive = p->mFlags.mBattleBgmOff;
     state.subMusicEligible = sub == 0xffffffff || ordinary;
@@ -75,7 +91,7 @@ void update(void* raw, f32 base) {
         p->mSceneBgm.get() * p->mStreamBgmMaster.get() * p->field_0x84.get() * p->field_0xa4.get();
     state.battleVolume = base * p->mStreamBgmMaster.get();
     music::sequence(state.replacementScene,state.customMusicEligible,state.musicMode,state.gain,
-                    state.battleScope,ordinary,state.battleVolume);
+                    state.battleScope,ordinary,state.battleVolume,boss,base,main,sub);
 }
 }
 bool scene(const char* spot,s32 room,s32 layer,s32 sceneNo,bool darkness,u8 demoWave,
@@ -119,5 +135,6 @@ void shutdown() {
     originalStatus = -1;
     musicOnlyRefresh = false;
     restoreAfterRefresh = -1;
+    bossEncounterLatched = false;
 }
 }
