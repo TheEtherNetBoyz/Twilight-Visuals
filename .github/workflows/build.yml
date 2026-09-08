@@ -1,0 +1,73 @@
+name: Build Twilight Visuals
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dusk_ref:
+        description: 'dusk-mfb branch, tag, or commit to build against'
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Windows x64
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out Twilight Visuals
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check out dusk-mfb SDK
+        uses: actions/checkout@v6
+        with:
+          repository: matthewdavidrichardanderson/dusk-mfb
+          ref: ${{ inputs.dusk_ref || 'main' }}
+          path: build-sdk
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Record source revisions
+        run: |
+          "Twilight Visuals: $(git rev-parse HEAD)" >> $env:GITHUB_STEP_SUMMARY
+          "dusk-mfb: $(git -C build-sdk rev-parse HEAD)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Set up MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=cl
+          -DDUSK_DIR="${{ github.workspace }}/build-sdk"
+          -DDUSK_MOD_USE_FULL_TREE=OFF
+
+      - name: Build mod package
+        run: cmake --build build --target twilight_visuals_package --parallel
+
+      - name: Upload mod package
+        uses: actions/upload-artifact@v7
+        with:
+          name: twilight-visuals-windows-x64
+          path: |
+            build/mods/twilight_visuals.dusk
+            LICENSE.md
+            THIRD_PARTY_NOTICES.md
+          if-no-files-found: error

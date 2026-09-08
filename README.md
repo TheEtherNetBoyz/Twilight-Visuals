@@ -1,4 +1,5 @@
 # Twilight Visuals
+THIS MOD WAS MADE FOR FUN WITH AI, so yes its VIBECODED.
 
 A standalone Dusklight MFB mod with visual styles, weather, particles, music integration, and movement options.
 
