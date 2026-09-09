@@ -5,9 +5,12 @@
 #include "SSystem/SComponent/c_math.h"
 #include "d/d_com_inf_game.h"
 #include "d/d_bg_s_gnd_chk.h"
+#include "d/d_bg_s_lin_chk.h"
 #include "d/d_kankyo.h"
 #include "d/d_kankyo_rain.h"
 #include "f_op/f_op_camera_mng.h"
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 namespace twilight_visuals::blood {
 namespace {
@@ -15,6 +18,8 @@ bool dark_hour_moon_enabled() { return active() && runtime_settings().style == S
 struct DarkHourBloodMark {
     cXyz position;
     f32 radius[16];
+    f32 midGround[16];
+    f32 rimGround[16];
     cXyz surfaceNormal;
     f32 surfaceD;
     f32 extent;
@@ -62,26 +67,66 @@ public:
 
         for (const DarkHourBloodMark& mark : marks) {
             if (!mark.active) continue;
-            const auto surfaceY = [&mark](f32 x, f32 z) {
-                return (-mark.surfaceNormal.x * x - mark.surfaceNormal.z * z -
-                        mark.surfaceD) / mark.surfaceNormal.y + 0.8f;
+            const auto groundAt = [&mark](int sample, f32 radialScale,
+                                          f32 offsetX, f32 offsetZ) {
+                const f32 centerGround = mark.position.y;
+                f32 grounded;
+                if (radialScale <= 0.5f) {
+                    grounded = centerGround +
+                        (mark.midGround[sample] - centerGround) * (radialScale * 2.0f);
+                } else {
+                    grounded = mark.midGround[sample] +
+                        (mark.rimGround[sample] - mark.midGround[sample]) *
+                        ((radialScale - 0.5f) * 2.0f);
+                }
+                // Offset decorative lobes along the center collision plane while retaining
+                // their sampled radial terrain profile.
+                if (fabsf(mark.surfaceNormal.y) > 0.001f) {
+                    grounded += (-mark.surfaceNormal.x * offsetX -
+                                 mark.surfaceNormal.z * offsetZ) / mark.surfaceNormal.y;
+                }
+                return grounded + 0.8f;
             };
-            const auto drawPool = [&mark, &surfaceY](f32 scale, f32 offsetX, f32 offsetZ,
+            const auto drawPool = [&mark, &groundAt](f32 scale, f32 offsetX, f32 offsetZ,
                                                      f32 height, GXColor center, GXColor rim) {
                 const f32 centerX = mark.position.x + offsetX;
                 const f32 centerZ = mark.position.z + offsetZ;
-                GXBegin(GX_TRIANGLEFAN, GX_VTXFMT0, 18);
-                GXPosition3f32(centerX, surfaceY(centerX, centerZ) + height, centerZ);
-                GXColor4u8(center.r, center.g, center.b, center.a);
-                for (int edge = 0; edge <= 16; ++edge) {
-                    const int sample = edge & 15;
+                const auto emit = [&](int sample, f32 radialScale, GXColor color) {
                     const f32 angle = mark.rotation + sample * 0.39269908f;
-                    const f32 x = centerX + sinf(angle) * mark.radius[sample] * scale;
-                    const f32 z = centerZ + cosf(angle) * mark.radius[sample] * scale;
-                    GXPosition3f32(x, surfaceY(x, z) + height, z);
-                    GXColor4u8(rim.r, rim.g, rim.b, rim.a);
+                    const f32 x = centerX + sinf(angle) * mark.radius[sample] * radialScale;
+                    const f32 z = centerZ + cosf(angle) * mark.radius[sample] * radialScale;
+                    GXPosition3f32(x, groundAt(sample, radialScale, offsetX, offsetZ) + height, z);
+                    GXColor4u8(color.r, color.g, color.b, color.a);
+                };
+                // Two radial bands follow collision sampled halfway out and at the rim.
+                // A single center fan bridges over angled triangles and clips into convex floors.
+                GXBegin(GX_TRIANGLES, GX_VTXFMT0, 16 * 9);
+                for (int sample = 0; sample < 16; ++sample) {
+                    const int next = (sample + 1) & 15;
+                    GXPosition3f32(centerX, mark.position.y + 0.8f + height, centerZ);
+                    GXColor4u8(center.r, center.g, center.b, center.a);
+                    emit(sample, scale * 0.5f, center);
+                    emit(next, scale * 0.5f, center);
+
+                    emit(sample, scale * 0.5f, center);
+                    emit(sample, scale, rim);
+                    emit(next, scale, rim);
+
+                    emit(sample, scale * 0.5f, center);
+                    emit(next, scale, rim);
+                    emit(next, scale * 0.5f, center);
                 }
                 GXEnd();
+            };
+
+            const auto surfaceY = [&mark, &groundAt](f32 x, f32 z) {
+                const f32 dx = x - mark.position.x;
+                const f32 dz = z - mark.position.z;
+                const f32 angle = atan2f(dx, dz) - mark.rotation;
+                int sample = static_cast<int>(floorf(angle / 0.39269908f + 0.5f)) & 15;
+                const f32 radial = sqrtf(dx * dx + dz * dz) /
+                    std::max(mark.radius[sample], 1.0f);
+                return groundAt(sample, std::clamp(radial, 0.0f, 1.0f), 0.0f, 0.0f);
             };
 
             // Layer near-black coagulated edges beneath a translucent burgundy
@@ -163,19 +208,59 @@ static f32 dark_hour_blood_random_unit(u32& state) {
 }
 
 static bool dark_hour_blood_footprint_is_walkable(const cXyz& center, f32 ground,
-                                                   const f32 (&radius)[16], f32 rotation) {
-    // Validate the center plus the complete rim. This keeps puddles off walls,
-    // ledges, holes, steep terrain and geometry on a different vertical level.
-    for (int sample = 0; sample < 16; ++sample) {
-        const f32 angle = rotation + sample * 0.39269908f;
-        cXyz probe(center.x + sinf(angle) * radius[sample], ground + 120.0f,
-                   center.z + cosf(angle) * radius[sample]);
-        dBgS_GndChk check;
-        check.SetPos(&probe);
-        const f32 rimGround = dComIfG_Bgsp().GroundCross(&check);
-        cM3dGPla rimSurface;
-        if (rimGround == -G_CM3D_F_INF || fabsf(rimGround - ground) > 28.0f ||
-            !dComIfG_Bgsp().GetTriPla(check, &rimSurface) || rimSurface.mNormal.y < 0.78f) {
+                                                   const f32 (&radius)[16], f32 rotation,
+                                                   const cM3dGPla& centerSurface,
+                                                   f32 (&midGroundOut)[16],
+                                                   f32 (&rimGroundOut)[16]) {
+    // Probe 32 directions at quarter-radius intervals. Besides finding holes, require every
+    // point to remain on the center collision plane. A single mesh cannot represent a puddle
+    // crossing a curb/crease without visibly cutting into one of the surfaces.
+    for (int probeSample = 0; probeSample < 32; ++probeSample) {
+        const int sample0 = (probeSample >> 1) & 15;
+        const int sample1 = (sample0 + 1) & 15;
+        const f32 radiusBlend = (probeSample & 1) ? 0.5f : 0.0f;
+        const f32 probeRadius = radius[sample0] +
+            (radius[sample1] - radius[sample0]) * radiusBlend;
+        const f32 angle = rotation + probeSample * 0.19634954f;
+        f32 outerGround = ground;
+        for (int ring = 1; ring <= 4; ++ring) {
+            const f32 scale = ring * 0.25f;
+            const f32 x = center.x + sinf(angle) * probeRadius * scale;
+            const f32 z = center.z + cosf(angle) * probeRadius * scale;
+            cXyz probe(x, ground + 120.0f, z);
+            dBgS_GndChk check;
+            check.SetPos(&probe);
+            const f32 sampledGround = dComIfG_Bgsp().GroundCross(&check);
+            cM3dGPla sampledSurface;
+            const bool hasSurface = sampledGround != -G_CM3D_F_INF &&
+                dComIfG_Bgsp().GetTriPla(check, &sampledSurface);
+            const f32 expectedGround = (-centerSurface.mNormal.x * x -
+                centerSurface.mNormal.z * z - centerSurface.mD) /
+                centerSurface.mNormal.y;
+            const f32 normalAgreement = hasSurface ?
+                centerSurface.mNormal.x * sampledSurface.mNormal.x +
+                    centerSurface.mNormal.y * sampledSurface.mNormal.y +
+                    centerSurface.mNormal.z * sampledSurface.mNormal.z : -1.0f;
+            if (sampledGround == -G_CM3D_F_INF || fabsf(sampledGround - ground) > 28.0f ||
+                !hasSurface || sampledSurface.mNormal.y < 0.78f ||
+                fabsf(sampledGround - expectedGround) > 4.0f || normalAgreement < 0.985f) {
+                return false;
+            }
+            if ((probeSample & 1) == 0) {
+                if (ring == 2) midGroundOut[sample0] = sampledGround;
+                if (ring == 4) rimGroundOut[sample0] = sampledGround;
+            }
+            if (ring == 4) outerGround = sampledGround;
+        }
+
+        // GroundCross can see the same broad floor plane on both sides of a curb. Trace just
+        // above the surface to reject any vertical collision face cutting through the puddle.
+        cXyz lineStart(center.x, ground + 3.0f, center.z);
+        cXyz lineEnd(center.x + sinf(angle) * probeRadius, outerGround + 3.0f,
+                     center.z + cosf(angle) * probeRadius);
+        dBgS_LinChk lineCheck;
+        lineCheck.Set(&lineStart, &lineEnd, nullptr);
+        if (dComIfG_Bgsp().LineCross(&lineCheck)) {
             return false;
         }
     }
@@ -204,7 +289,10 @@ static void dark_hour_blood_move() {
         previousRoom = room;
         strncpy(previousStage, stage, sizeof(previousStage) - 1);
         previousStage[sizeof(previousStage) - 1] = '\0';
-        randomState = 0xD44B100Du ^ static_cast<u32>(room + 128);
+        const u64 timeSeed = static_cast<u64>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        randomState = 0xD44B100Du ^ static_cast<u32>(room + 128) ^
+                      static_cast<u32>(timeSeed) ^ static_cast<u32>(timeSeed >> 32);
         for (const char* it = stage; *it != '\0'; ++it) {
             randomState = randomState * 33u + static_cast<u8>(*it);
         }
@@ -221,14 +309,13 @@ static void dark_hour_blood_move() {
         constexpr f32 CoverageRadius = 40000.0f;
         constexpr f32 FloorSearchHeight = 30000.0f;
         constexpr f32 FloorSearchDepth = 30000.0f;
-        const f32 diskRotation = dark_hour_blood_random_unit(randomState) * 6.2831853f;
         for (int attempt = 0;
              attempt < MaxAttempts && s_darkHourBloodPacket.nextMark < MaxMarks; ++attempt) {
-            // 7919 is coprime with 12000, so this permutation visits the full
-            // radius in a well-spread order rather than filling near Link first.
-            const int diskSample = (attempt * 7919) % MaxAttempts;
-            const f32 angle = diskRotation + diskSample * 2.39996323f;
-            const f32 distance = sqrtf((diskSample + 0.5f) / MaxAttempts) * CoverageRadius;
+            // Fresh random polar coordinates make every room load different. Square-root
+            // radius keeps the distribution uniform by area; overlap rejection maintains
+            // the requested spacing without falling back to a repeated fixed pattern.
+            const f32 angle = dark_hour_blood_random_unit(randomState) * 6.2831853f;
+            const f32 distance = sqrtf(dark_hour_blood_random_unit(randomState)) * CoverageRadius;
             cXyz position(player->current.pos.x + sinf(angle) * distance,
                           player->current.pos.y + FloorSearchHeight,
                           player->current.pos.z + cosf(angle) * distance);
@@ -281,8 +368,12 @@ static void dark_hour_blood_move() {
                 }
 
                 cXyz floorPosition(position.x, ground, position.z);
+                f32 midGround[16];
+                f32 rimGround[16];
                 if (!dark_hour_blood_footprint_is_walkable(floorPosition, ground,
-                                                           roundedRadius, rotation)) {
+                                                           roundedRadius, rotation,
+                                                           surface,
+                                                           midGround, rimGround)) {
                     continue;
                 }
 
@@ -311,6 +402,8 @@ static void dark_hour_blood_move() {
                 mark.sheenAngle = dark_hour_blood_random_unit(randomState) * 6.2831853f;
                 for (int sample = 0; sample < 16; ++sample) {
                     mark.radius[sample] = roundedRadius[sample];
+                    mark.midGround[sample] = midGround[sample];
+                    mark.rimGround[sample] = rimGround[sample];
                 }
                 mark.active = true;
             }
