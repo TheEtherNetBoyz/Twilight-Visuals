@@ -22,6 +22,7 @@ s32 g_enemyProcRoom = -128;
 s32 g_enemyProcLayer = -128;
 bool g_musicSceneTemple = false;
 bool g_musicScenePalace = false;
+bool g_musicGameplayReady = false;
 
 bool is_palace_music_stage(const char* stage) {
     return stage != nullptr && std::strncmp(stage, "D_MN08", 6) == 0;
@@ -75,6 +76,21 @@ void refresh_runtime_settings() {
     // Keep the linkage policy in the mod: the host only exposes its current
     // master multiplier and applies the value sent here to the streamed mix.
     music::set_volume(g_runtime.musicVolume * compat::get_master_volume());
+
+    // Start a music session only after the loaded map and player both exist. Once started, keep
+    // it latched across all transient scene/player gaps in room and area load zones. Reset only
+    // on authoritative non-gameplay screens; checking for a missing player each frame caused
+    // one-frame transition gaps to tear down the stream.
+    const bool prelaunch = compat::is_prelaunch_open();
+    const bool titleOrFileSelect = !prelaunch &&
+        fopAcM_SearchByName(fpcNm_TITLE_e) != nullptr;
+    if (prelaunch || titleOrFileSelect) {
+        g_musicGameplayReady = false;
+        music::suspend();
+    } else if (!g_musicGameplayReady && dComIfGp_getStage() != nullptr &&
+               dComIfGp_getPlayer(0) != nullptr) {
+        g_musicGameplayReady = true;
+    }
 }
 
 void provide_visual_state(u8* enabled, u8* style, f32* brightness,
@@ -246,18 +262,22 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
 void provide_audio_sequence(DuskTwilightAudioSequenceV1* state) {
     if (state == nullptr) return;
 
-    const bool enabled = active() && music_override_allowed();
+    // The start-stage name and selected preset survive after gameplay exits. Require either a
+    // live player or an active next-stage transfer so title/file-select music is never replaced.
+    // The next-stage half keeps ownership intact during genuine room/load-zone transitions.
+    const bool enabled = g_musicGameplayReady && active() && music_override_allowed();
     state->enabled = enabled;
-    state->replacementScene = enabled && state->sceneMusicForced;
-    state->customMusicEligible = state->replacementScene && state->safeMusicEvent &&
-        state->mainReplacementReady && state->subMusicEligible;
+    // The selected visual preset owns background music whenever its override is allowed.
+    // Do not depend on the scene provider's placeholder/forced latch: Palace interiors and
+    // load zones can start a native scene or sub-sequence before that latch is established.
+    state->replacementScene = enabled;
+    state->customMusicEligible = enabled && state->safeMusicEvent;
     state->battleScope = enabled && state->safeMusicEvent &&
         (state->ordinaryBattle || !state->battleFlagActive) && state->subMusicEligible;
     const u8 selectedMusicMode =
         g_runtime.style == Style::AstralPlane ? 1 :
         g_runtime.style == Style::DarkHour ? 2 : 0;
-    state->musicMode = enabled && (state->replacementScene || state->battleScope) ?
-        selectedMusicMode : 0;
+    state->musicMode = enabled ? selectedMusicMode : 0;
 }
 
 void provide_running(DuskTwilightRunningV1* state) {

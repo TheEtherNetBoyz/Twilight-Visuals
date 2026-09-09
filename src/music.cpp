@@ -116,6 +116,7 @@ struct Track {
 Track AstralMp3Ambient, AstralMp3Combat, DarkHourAmbient, DarkHourCombat, MasterOfShadow;
 std::atomic<float> TwilightMusicVolume{1};
 std::atomic<float> PalaceGain{1}, BattleGain{1}, BossGain{1};
+std::atomic<bool> NativeBgmMute{false};
 std::atomic<u32> BossNativeMain{0xffffffff}, BossNativeSub{0xffffffff};
 bool registered = false;
 std::atomic<bool> sceneStartPending{true};
@@ -140,6 +141,10 @@ void update_sequence(bool replacementScene, bool eligible, int musicMode,
     const bool selectionReady = astral ? ready : (darkHour && darkHourReady);
     const bool currentTrackReady = battleActive ? (astral ? combatReady : darkHour && darkHourCombatReady) : selectionReady;
     const bool sceneStart = sceneStartPending.load() && replacementScene;
+    // Keep every native scene score silent while a visual preset owns music. This remains
+    // latched through scene teardown, so destination music cannot leak before its provider
+    // callback and placeholder sequence have finished loading.
+    NativeBgmMute.store(customSelected && selectionReady && replacementScene);
     // Silence the placeholder before it becomes audible, but do not start the
     // decoder until the native scene is ready to play music.
     fade.select(customSelected && currentTrackReady, selectionScope, elapsed, sceneStart);
@@ -224,6 +229,16 @@ void mix(float* output, u32 frames, u32 rate) {
     }
 }
 float channel_gain(u32 channel) {
+    // JAudio sequence IDs occupy the 0x01000000 range. Permit short fanfares while muting
+    // scene/event music; sound effects and voices use separate SE buses and are untouched.
+    const bool fanfare = channel == Z2BGM_ITEM_GET || channel == Z2BGM_ITEM_GET_MINI ||
+        channel == Z2BGM_OPEN_BOX || channel == Z2BGM_ITEM_GET_ME ||
+        channel == Z2BGM_HEART_GET || channel == Z2BGM_FISHING_GET1 ||
+        channel == Z2BGM_FISHING_GET2 || channel == Z2BGM_FISHING_GET3 ||
+        channel == Z2BGM_ITEM_GET_INSECT || channel == Z2BGM_ITEM_GET_SMELL ||
+        channel == Z2BGM_ITEM_GET_POU;
+    if (NativeBgmMute.load() && (channel & 0xff000000u) == 0x01000000u && !fanfare)
+        return 0.0f;
     if (channel == Z2BGM_DUNGEON_LV8) return PalaceGain.load();
     if (channel == Z2BGM_BATTLE_NORMAL || channel == Z2BGM_BATTLE_TWILIGHT) return BattleGain.load();
     // Mute the native boss score while the streamed replacement fades in.
@@ -309,6 +324,7 @@ void suspend() {
     BossGain.store(1.0f);
     BossNativeMain.store(0xffffffff);
     BossNativeSub.store(0xffffffff);
+    NativeBgmMute.store(false);
     sceneStartPending.store(true);
 }
 void sequence(bool scene, bool eligible, int mode, float gain, bool scope, bool battle,
@@ -336,5 +352,6 @@ void shutdown() {
     BossGain.store(1);
     BossNativeMain.store(0xffffffff);
     BossNativeSub.store(0xffffffff);
+    NativeBgmMute.store(false);
 }
 }

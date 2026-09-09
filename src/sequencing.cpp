@@ -37,8 +37,16 @@ s32 query(DuskSequenceEvent point) {
 void tick() {
     const bool enabled = active() && music_override_allowed();
     if (!scene_manager() || !sequence_manager() || !status_manager()) return;
-    if (!scene_manager()->isSceneExist() ||
-        (dComIfGp_getPlayer(0) == nullptr && !dComIfGp_isEnableNextStage())) {
+    const bool sceneExists = scene_manager()->isSceneExist();
+    const bool nextStage = dComIfGp_isEnableNextStage();
+    const bool playerExists = dComIfGp_getPlayer(0) != nullptr;
+    if (!sceneExists && previousEnabled && enabled && (playerExists || nextStage)) {
+        // A room/load-zone transition temporarily removes the scene BGM object. Keep the
+        // replacement stream and native placeholder suppression latched across that gap;
+        // suspending here causes both an audible cutoff and a flash of destination music.
+        return;
+    }
+    if (!sceneExists || (!playerExists && !nextStage)) {
         music::suspend();
         forced = pending = previousEnabled = false;
         bossEncounterLatched = false;

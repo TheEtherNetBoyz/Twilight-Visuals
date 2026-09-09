@@ -1,9 +1,13 @@
 #include "compat.hpp"
 #include "sky.hpp"
 
+#include "mods/svc/hook.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstddef>
+
+extern const HookService* svc_hook;
 
 namespace twilight_visuals::compat {
 namespace {
@@ -39,6 +43,22 @@ float get_master_volume() {
     using Fn = float (*)();
     static Fn fn = resolve<Fn>("DuskGetMasterVolume");
     return fn != nullptr ? fn() : 1.0f;
+}
+
+bool is_prelaunch_open() {
+    static bool resolved = false;
+    static bool (*query)() = nullptr;
+    if (!resolved) {
+        resolved = true;
+        void* address = nullptr;
+        HookSymbolFlags flags{};
+        if (svc_hook != nullptr &&
+            svc_hook->resolve(mod_ctx, "dusk::ui::is_prelaunch_open", &address, &flags) == MOD_OK &&
+            (static_cast<u32>(flags) & HOOK_SYMBOL_CODE) != 0) {
+            query = reinterpret_cast<bool (*)()>(address);
+        }
+    }
+    return query != nullptr && query();
 }
 
 
