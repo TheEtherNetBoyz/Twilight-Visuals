@@ -36,9 +36,16 @@ s32 query(DuskSequenceEvent point) {
 }
 void tick() {
     const bool enabled = active() && music_override_allowed();
+    if (!scene_manager() || !sequence_manager() || !status_manager()) return;
+    if (!scene_manager()->isSceneExist() ||
+        (dComIfGp_getPlayer(0) == nullptr && !dComIfGp_isEnableNextStage())) {
+        music::suspend();
+        forced = pending = previousEnabled = false;
+        bossEncounterLatched = false;
+        return;
+    }
     if (enabled == previousEnabled && !(enabled && pending)) return;
-    if (!scene_manager() || !sequence_manager() || !status_manager() ||
-        !scene_manager()->isSceneExist() || dComIfGp_isEnableNextStage() ||
+    if (dComIfGp_isEnableNextStage() ||
         status_manager()->getDemoStatus() != 0 || dComIfGp_event_runCheck()) return;
     const char* stage = dComIfGp_getStartStageName();
     if (!stage || !*stage) return;

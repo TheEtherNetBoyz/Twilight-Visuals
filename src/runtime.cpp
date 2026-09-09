@@ -71,6 +71,7 @@ void refresh_runtime_settings() {
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
     g_runtime.humanWolfSenses = get_bool(config.humanWolfSenses);
     g_runtime.excludePalaceOfTwilight = get_bool(config.excludePalaceOfTwilight, true);
+    g_runtime.hideGameplayCursor = get_bool(config.hideGameplayCursor);
     // Keep the linkage policy in the mod: the host only exposes its current
     // master multiplier and applies the value sent here to the streamed mix.
     music::set_volume(g_runtime.musicVolume * compat::get_master_volume());
@@ -198,6 +199,14 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
     (void)room;
     (void)layer;
     (void)inDarkness;
+    // The global start-stage name survives into title/file-select. Only accept
+    // a replacement while a gameplay player exists or a gameplay stage load
+    // is actively being prepared.
+    if (dComIfGp_getPlayer(0) == nullptr && !dComIfGp_isEnableNextStage()) {
+        g_musicSceneTemple = false;
+        g_musicScenePalace = false;
+        return false;
+    }
     const bool palaceSpot = is_palace_music_stage(spot);
     const bool templeScene = is_temple_music_stage(spot) ||
         sceneNo == Z2SCENE_FOREST_TEMPLE ||

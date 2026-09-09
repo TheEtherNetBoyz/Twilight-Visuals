@@ -57,6 +57,7 @@ struct RuntimeSettings {
     bool skywardSwordRunning{};
     bool humanWolfSenses{};
     bool excludePalaceOfTwilight{true};
+    bool hideGameplayCursor{};
 };
 
 const RuntimeSettings& runtime_settings();

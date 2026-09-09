@@ -11,6 +11,7 @@
 #include "running.hpp"
 #include "sequencing.hpp"
 #include "sky.hpp"
+#include "cursor.hpp"
 #include <cstdio>
 
 #include "mods/service.hpp"
@@ -56,6 +57,16 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     twilight_visuals::boundary::initialize();
     twilight_visuals::running::initialize();
     twilight_visuals::sequencing::initialize();
+
+    result = twilight_visuals::cursor::initialize();
+    if (result != MOD_OK) {
+        if (error) {
+            error->code = result;
+            std::snprintf(error->message, sizeof(error->message), "Mouse cursor hook unavailable");
+        }
+        mod_shutdown(nullptr);
+        return result;
+    }
 
     result = twilight_visuals::music::initialize();
     if (result != MOD_OK) {
@@ -117,6 +128,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    twilight_visuals::cursor::shutdown();
     twilight_visuals::sky::shutdown();
     twilight_visuals::running::shutdown();
     twilight_visuals::sequencing::shutdown();

@@ -298,6 +298,19 @@ ModResult initialize() {
 }
 void set_volume(float value) { TwilightMusicVolume.store(std::clamp(value, 0.0f, 1.0f)); }
 void prepare_scene() { sceneStartPending.store(true); }
+void suspend() {
+    AstralMp3Ambient.setGain(0.0f, 0.0f, false, false, true);
+    AstralMp3Combat.setGain(0.0f, 0.0f, false, false, true);
+    DarkHourAmbient.setGain(0.0f, 0.0f, false, false, true);
+    DarkHourCombat.setGain(0.0f, 0.0f, false, false, true);
+    MasterOfShadow.setGain(0.0f, 0.0f, false, false, true);
+    PalaceGain.store(1.0f);
+    BattleGain.store(1.0f);
+    BossGain.store(1.0f);
+    BossNativeMain.store(0xffffffff);
+    BossNativeSub.store(0xffffffff);
+    sceneStartPending.store(true);
+}
 void sequence(bool scene, bool eligible, int mode, float gain, bool scope, bool battle,
               float battleVolume, bool boss, float bossVolume, u32 bossMain, u32 bossSub) {
     update_sequence(scene, eligible, mode, gain, scope, battle, battleVolume, boss, bossVolume,

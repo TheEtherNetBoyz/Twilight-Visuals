@@ -16,6 +16,7 @@ struct Settings {
     ConfigVarHandle skywardSwordRunning{};
     ConfigVarHandle humanWolfSenses{};
     ConfigVarHandle excludePalaceOfTwilight{};
+    ConfigVarHandle hideGameplayCursor{};
 };
 
 Settings& settings();

@@ -131,6 +131,12 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_toggle(left, "Wolf Senses as Human",
         "Press D-pad Down as human Link to toggle Wolf Senses after the ability has been unlocked.",
         g_settings.humanWolfSenses);
+
+    svc_ui->pane_add_section(mod_ctx, left, "Interface");
+    add_toggle(left, "Hide Mouse Cursor During Gameplay",
+        "Hide the mouse cursor while no Dusklight or in-game menu is visible. The cursor is "
+        "restored whenever a menu opens.",
+        g_settings.hideGameplayCursor);
     return MOD_OK;
 }
 
@@ -182,6 +188,8 @@ ModResult register_settings(ModError*) {
     result = register_bool("skyward-sword-running", false, g_settings.skywardSwordRunning);
     if (result != MOD_OK) return result;
     result = register_bool("human-wolf-senses", false, g_settings.humanWolfSenses);
+    if (result != MOD_OK) return result;
+    result = register_bool("hide-gameplay-cursor", false, g_settings.hideGameplayCursor);
     if (result != MOD_OK) return result;
     return register_bool("exclude-palace-of-twilight", true,
         g_settings.excludePalaceOfTwilight);

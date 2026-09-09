@@ -36,6 +36,7 @@ add_mod(twilight_visuals
         src/native_particles.cpp
         src/runtime.cpp
         src/settings.cpp
+        src/cursor.cpp
     MOD_JSON mod.json
     RES_DIR res
     BUNDLE
