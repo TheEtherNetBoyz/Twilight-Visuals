@@ -8,7 +8,6 @@
 #include "d/d_bg_s_lin_chk.h"
 #include "d/d_kankyo.h"
 #include "d/d_kankyo_rain.h"
-#include "f_op/f_op_camera_mng.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -17,14 +16,23 @@ namespace {
 bool dark_hour_moon_enabled() { return active() && runtime_settings().style == Style::DarkHour; }
 struct DarkHourBloodMark {
     cXyz position;
-    f32 radius[16];
-    f32 midGround[16];
-    f32 rimGround[16];
+    f32 radius[32];
+    f32 midGround[32];
+    f32 rimGround[32];
     cXyz surfaceNormal;
     f32 surfaceD;
     f32 extent;
     f32 rotation;
     f32 sheenAngle;
+    bool active;
+};
+
+struct DarkHourBloodFootprint {
+    cXyz position;
+    cXyz surfaceNormal;
+    f32 surfaceD;
+    f32 rotation;
+    u16 life;
     bool active;
 };
 
@@ -92,7 +100,7 @@ public:
                 const f32 centerX = mark.position.x + offsetX;
                 const f32 centerZ = mark.position.z + offsetZ;
                 const auto emit = [&](int sample, f32 radialScale, GXColor color) {
-                    const f32 angle = mark.rotation + sample * 0.39269908f;
+                    const f32 angle = mark.rotation + sample * 0.19634954f;
                     const f32 x = centerX + sinf(angle) * mark.radius[sample] * radialScale;
                     const f32 z = centerZ + cosf(angle) * mark.radius[sample] * radialScale;
                     GXPosition3f32(x, groundAt(sample, radialScale, offsetX, offsetZ) + height, z);
@@ -100,9 +108,9 @@ public:
                 };
                 // Two radial bands follow collision sampled halfway out and at the rim.
                 // A single center fan bridges over angled triangles and clips into convex floors.
-                GXBegin(GX_TRIANGLES, GX_VTXFMT0, 16 * 9);
-                for (int sample = 0; sample < 16; ++sample) {
-                    const int next = (sample + 1) & 15;
+                GXBegin(GX_TRIANGLES, GX_VTXFMT0, 32 * 9);
+                for (int sample = 0; sample < 32; ++sample) {
+                    const int next = (sample + 1) & 31;
                     GXPosition3f32(centerX, mark.position.y + 0.8f + height, centerZ);
                     GXColor4u8(center.r, center.g, center.b, center.a);
                     emit(sample, scale * 0.5f, center);
@@ -123,77 +131,122 @@ public:
                 const f32 dx = x - mark.position.x;
                 const f32 dz = z - mark.position.z;
                 const f32 angle = atan2f(dx, dz) - mark.rotation;
-                int sample = static_cast<int>(floorf(angle / 0.39269908f + 0.5f)) & 15;
+                const int sample = static_cast<int>(floorf(angle / 0.19634954f + 0.5f)) & 31;
                 const f32 radial = sqrtf(dx * dx + dz * dz) /
-                    std::max(mark.radius[sample], 1.0f);
+                                   std::max(mark.radius[sample], 1.0f);
                 return groundAt(sample, std::clamp(radial, 0.0f, 1.0f), 0.0f, 0.0f);
             };
-
-            // Layer near-black coagulated edges beneath a translucent burgundy
-            // body. Offset lobes break up the concentric decal appearance, and
-            // small contained droplets make the perimeter read as a spill.
-            drawPool(1.0f, 0.0f, 0.0f, 0.0f, {34, 0, 3, 225}, {16, 0, 2, 165});
-            drawPool(0.91f, -mark.radius[2] * 0.018f, mark.radius[10] * 0.015f,
-                     0.18f, {78, 1, 7, 205}, {45, 0, 4, 175});
-            drawPool(0.47f, mark.radius[5] * 0.07f, -mark.radius[13] * 0.04f,
-                     0.32f, {104, 4, 10, 110}, {67, 1, 6, 80});
-            drawPool(0.105f, mark.extent * 0.73f, mark.extent * 0.16f,
-                     0.08f, {65, 0, 5, 205}, {24, 0, 2, 145});
-            drawPool(0.075f, -mark.extent * 0.62f, mark.extent * 0.43f,
-                     0.08f, {72, 1, 6, 195}, {25, 0, 2, 135});
-
-            // Wet blood should read as a shallow reflective puddle, not as a
-            // solid decal. These soft tapered patches act as a small water
-            // texture while keeping every highlight grounded on the sampled
-            // collision plane. They fade at the edge so no hard line is left
-            // across the puddle.
-            const f32 reflectionScale = mark.extent / 300.0f;
-            const f32 sheenCos = cosf(mark.sheenAngle);
-            const f32 sheenSin = sinf(mark.sheenAngle);
-            const f32 centerX = mark.position.x;
-            const f32 centerZ = mark.position.z;
-            const auto wetPoint = [&](f32 along, f32 across, f32 height) {
-                const f32 x = centerX + sheenCos * along - sheenSin * across;
-                const f32 z = centerZ + sheenSin * along + sheenCos * across;
-                return cXyz(x, surfaceY(x, z) + height, z);
-            };
-            const auto drawWetPatch = [&](f32 along, f32 across, f32 radiusAlong,
-                                          f32 radiusAcross, f32 phase, GXColor color,
-                                          f32 height) {
-                GXBegin(GX_TRIANGLEFAN, GX_VTXFMT0, 9);
-                const cXyz center = wetPoint(along, across, height);
-                GXPosition3f32(center.x, center.y, center.z);
+            const auto drawMottle = [&mark, &surfaceY](f32 x, f32 z, f32 radiusX,
+                                                       f32 radiusZ, f32 rotation,
+                                                       GXColor color) {
+                GXBegin(GX_TRIANGLEFAN, GX_VTXFMT0, 11);
+                GXPosition3f32(x, surfaceY(x, z) + 0.62f, z);
                 GXColor4u8(color.r, color.g, color.b, color.a);
-                for (int point = 0; point <= 7; ++point) {
-                    const f32 angle = phase + point * 0.78539816f;
-                    const f32 irregular = 0.82f + 0.18f * sinf(angle * 3.0f + phase);
-                    const cXyz edge = wetPoint(along + cosf(angle) * radiusAlong * irregular,
-                                               across + sinf(angle) * radiusAcross * irregular,
-                                               height);
-                    GXPosition3f32(edge.x, edge.y, edge.z);
-                    GXColor4u8(color.r, color.g, color.b,
-                               static_cast<u8>(color.a * 0.08f));
+                for (int point = 0; point <= 9; ++point) {
+                    const f32 angle = point * 0.6981317f;
+                    const f32 localX = cosf(angle) * radiusX;
+                    const f32 localZ = sinf(angle) * radiusZ;
+                    const f32 edgeX = x + cosf(rotation) * localX - sinf(rotation) * localZ;
+                    const f32 edgeZ = z + sinf(rotation) * localX + cosf(rotation) * localZ;
+                    GXPosition3f32(edgeX, surfaceY(edgeX, edgeZ) + 0.6f, edgeZ);
+                    GXColor4u8(color.r, color.g, color.b, 0);
                 }
                 GXEnd();
             };
 
-            // Broad, low-alpha warm reflections suggest a wet surface without
-            // making the blood glow or drawing bright colored lines over it.
-            drawWetPatch(-mark.extent * 0.20f, mark.extent * 0.09f,
-                          mark.extent * 0.16f, 12.0f * reflectionScale,
-                          mark.sheenAngle, {190, 72, 76, 30}, 0.55f);
-            drawWetPatch(mark.extent * 0.02f, -mark.extent * 0.15f,
-                          mark.extent * 0.10f, 8.0f * reflectionScale,
-                          mark.sheenAngle + 0.8f, {225, 125, 128, 18}, 0.7f);
+            // Larger spills hold more liquid and are slightly denser. A narrow,
+            // irregular near-black perimeter reads as a drying/coagulated edge.
+            const f32 sizeOpacity = std::clamp((mark.extent - 220.0f) / 430.0f, 0.0f, 1.0f);
+            const u8 bodyAlpha = static_cast<u8>(135.0f + sizeOpacity * 34.0f);
+            const u8 centerAlpha = static_cast<u8>(66.0f + sizeOpacity * 22.0f);
+            drawPool(1.0f, 0.0f, 0.0f, 0.0f, {22, 0, 3, 220}, {8, 0, 1, 188});
+            drawPool(0.925f, -mark.radius[4] * 0.008f, mark.radius[20] * 0.006f,
+                     0.14f, {91, 3, 11, bodyAlpha}, {48, 0, 6, bodyAlpha});
+            drawPool(0.52f, mark.radius[10] * 0.07f, -mark.radius[26] * 0.04f,
+                     0.32f, {107, 4, 11, centerAlpha}, {62, 1, 6, 54});
+
+            // Soft deterministic mottling replaces a tiled texture. It breaks up
+            // the flat fill while keeping boundaries diffuse and line-free.
+            for (int patch = 0; patch < 12; ++patch) {
+                const f32 seed = mark.rotation * (patch + 1) + mark.sheenAngle * 1.7f;
+                const f32 angle = seed + patch * 2.3999632f;
+                const f32 distance = mark.extent * (0.12f + 0.48f *
+                    (0.5f + 0.5f * sinf(seed * 2.31f)));
+                const f32 x = mark.position.x + sinf(angle) * distance;
+                const f32 z = mark.position.z + cosf(angle) * distance;
+                const f32 patchSize = mark.extent * (0.085f + 0.055f *
+                    (0.5f + 0.5f * cosf(seed * 1.63f)));
+                const bool darkPatch = (patch & 1) == 0;
+                drawMottle(x, z, patchSize * 1.7f, patchSize, angle,
+                           darkPatch ? GXColor{18, 0, 2, 72} : GXColor{145, 8, 16, 46});
+            }
+
+            // Uneven satellite droplets make large spills look naturally scattered.
+            drawPool(0.105f, mark.extent * 0.73f, mark.extent * 0.16f,
+                     0.08f, {72, 0, 6, 168}, {24, 0, 2, 126});
+            drawPool(0.075f, -mark.extent * 0.62f, mark.extent * 0.43f,
+                     0.08f, {80, 1, 7, 158}, {25, 0, 2, 118});
+            drawPool(0.045f, mark.extent * 0.34f, -mark.extent * 0.71f,
+                     0.07f, {66, 0, 5, 142}, {21, 0, 2, 102});
+        }
+
+        // Wet footprints use the floor plane at each step, so they remain flush on
+        // slopes instead of hovering or sinking like a horizontal decal.
+        for (const DarkHourBloodFootprint& print : footprints) {
+            if (!print.active || print.life == 0 || fabsf(print.surfaceNormal.y) < 0.001f) continue;
+            const f32 fade = std::min(1.0f, static_cast<f32>(print.life) / 180.0f);
+            const f32 forwardX = sinf(print.rotation);
+            const f32 forwardZ = cosf(print.rotation);
+            const f32 sideX = cosf(print.rotation);
+            const f32 sideZ = -sinf(print.rotation);
+            const auto point = [&](f32 along, f32 across, f32 lift) {
+                const f32 x = print.position.x + forwardX * along + sideX * across;
+                const f32 z = print.position.z + forwardZ * along + sideZ * across;
+                const f32 y = (-print.surfaceNormal.x * x - print.surfaceNormal.z * z -
+                               print.surfaceD) / print.surfaceNormal.y;
+                return cXyz(x, y + lift, z);
+            };
+            const auto drawLobe = [&](f32 along, f32 length, f32 width, GXColor color) {
+                GXBegin(GX_TRIANGLEFAN, GX_VTXFMT0, 13);
+                cXyz center = point(along, 0.0f, 1.15f);
+                GXPosition3f32(center.x, center.y, center.z);
+                GXColor4u8(color.r, color.g, color.b, static_cast<u8>(color.a * fade));
+                for (int i = 0; i <= 11; ++i) {
+                    const f32 angle = i * 0.57119866f;
+                    cXyz edge = point(along + cosf(angle) * length,
+                                      sinf(angle) * width, 1.1f);
+                    GXPosition3f32(edge.x, edge.y, edge.z);
+                    GXColor4u8(color.r, color.g, color.b,
+                               static_cast<u8>(color.a * fade * 0.45f));
+                }
+                GXEnd();
+            };
+            drawLobe(7.0f, 15.0f, 8.0f, {62, 0, 5, 175});
+            drawLobe(-9.0f, 9.0f, 6.5f, {45, 0, 4, 150});
+            drawLobe(8.5f, 6.5f, 3.0f, {205, 112, 116, 48});
         }
         J3DShape::resetVcdVatCache();
     }
 
     DarkHourBloodMark marks[160] = {};
     u32 nextMark = 0;
+    DarkHourBloodFootprint footprints[192] = {};
+    u32 nextFootprint = 0;
 };
 
 static DarkHourBloodPacket s_darkHourBloodPacket;
+static cXyz s_lastFootprintPosition;
+static bool s_haveLastFootprintPosition = false;
+static bool s_nextFootIsLeft = true;
+static int s_wetStepsRemaining = 0;
+
+static void dark_hour_blood_clear_footprints() {
+    for (DarkHourBloodFootprint& print : s_darkHourBloodPacket.footprints) print.active = false;
+    s_darkHourBloodPacket.nextFootprint = 0;
+    s_haveLastFootprintPosition = false;
+    s_nextFootIsLeft = true;
+    s_wetStepsRemaining = 0;
+}
 
 static u32 dark_hour_blood_random(u32& state) {
     state ^= state << 13;
@@ -208,19 +261,16 @@ static f32 dark_hour_blood_random_unit(u32& state) {
 }
 
 static bool dark_hour_blood_footprint_is_walkable(const cXyz& center, f32 ground,
-                                                   const f32 (&radius)[16], f32 rotation,
+                                                   const f32 (&radius)[32], f32 rotation,
                                                    const cM3dGPla& centerSurface,
-                                                   f32 (&midGroundOut)[16],
-                                                   f32 (&rimGroundOut)[16]) {
+                                                   f32 (&midGroundOut)[32],
+                                                   f32 (&rimGroundOut)[32]) {
     // Probe 32 directions at quarter-radius intervals. Besides finding holes, require every
     // point to remain on the center collision plane. A single mesh cannot represent a puddle
     // crossing a curb/crease without visibly cutting into one of the surfaces.
     for (int probeSample = 0; probeSample < 32; ++probeSample) {
-        const int sample0 = (probeSample >> 1) & 15;
-        const int sample1 = (sample0 + 1) & 15;
-        const f32 radiusBlend = (probeSample & 1) ? 0.5f : 0.0f;
-        const f32 probeRadius = radius[sample0] +
-            (radius[sample1] - radius[sample0]) * radiusBlend;
+        const int sample0 = probeSample;
+        const f32 probeRadius = radius[sample0];
         const f32 angle = rotation + probeSample * 0.19634954f;
         f32 outerGround = ground;
         for (int ring = 1; ring <= 4; ++ring) {
@@ -246,10 +296,8 @@ static bool dark_hour_blood_footprint_is_walkable(const cXyz& center, f32 ground
                 fabsf(sampledGround - expectedGround) > 4.0f || normalAgreement < 0.985f) {
                 return false;
             }
-            if ((probeSample & 1) == 0) {
-                if (ring == 2) midGroundOut[sample0] = sampledGround;
-                if (ring == 4) rimGroundOut[sample0] = sampledGround;
-            }
+            if (ring == 2) midGroundOut[sample0] = sampledGround;
+            if (ring == 4) rimGroundOut[sample0] = sampledGround;
             if (ring == 4) outerGround = sampledGround;
         }
 
@@ -277,6 +325,7 @@ static void dark_hour_blood_move() {
         previousStage[0] = '\0';
         for (DarkHourBloodMark& mark : s_darkHourBloodPacket.marks) mark.active = false;
         s_darkHourBloodPacket.nextMark = 0;
+        dark_hour_blood_clear_footprints();
         return;
     }
 
@@ -298,6 +347,7 @@ static void dark_hour_blood_move() {
         }
         for (DarkHourBloodMark& mark : s_darkHourBloodPacket.marks) mark.active = false;
         s_darkHourBloodPacket.nextMark = 0;
+        dark_hour_blood_clear_footprints();
 
         // Populate the complete loaded room in this first map frame. A
         // low-discrepancy disk covers distant geometry evenly instead of
@@ -352,10 +402,10 @@ static void dark_hour_blood_move() {
                 const f32 rotation = dark_hour_blood_random_unit(randomState) * 6.2831853f;
                 const f32 phaseA = dark_hour_blood_random_unit(randomState) * 6.2831853f;
                 const f32 phaseB = dark_hour_blood_random_unit(randomState) * 6.2831853f;
-                f32 roundedRadius[16];
+                f32 roundedRadius[32];
                 f32 extent = 0.0f;
-                for (int sample = 0; sample < 16; ++sample) {
-                    const f32 radiusAngle = sample * 0.39269908f;
+                for (int sample = 0; sample < 32; ++sample) {
+                    const f32 radiusAngle = sample * 0.19634954f;
                     // Low-frequency waves create broad organic curves with a
                     // slightly offset lobe, like a spill spreading across a
                     // floor. Avoid independent per-vertex noise so the edge
@@ -368,8 +418,8 @@ static void dark_hour_blood_move() {
                 }
 
                 cXyz floorPosition(position.x, ground, position.z);
-                f32 midGround[16];
-                f32 rimGround[16];
+                f32 midGround[32];
+                f32 rimGround[32];
                 if (!dark_hour_blood_footprint_is_walkable(floorPosition, ground,
                                                            roundedRadius, rotation,
                                                            surface,
@@ -400,7 +450,7 @@ static void dark_hour_blood_move() {
                 mark.extent = extent;
                 mark.rotation = rotation;
                 mark.sheenAngle = dark_hour_blood_random_unit(randomState) * 6.2831853f;
-                for (int sample = 0; sample < 16; ++sample) {
+                for (int sample = 0; sample < 32; ++sample) {
                     mark.radius[sample] = roundedRadius[sample];
                     mark.midGround[sample] = midGround[sample];
                     mark.rimGround[sample] = rimGround[sample];
@@ -409,6 +459,62 @@ static void dark_hour_blood_move() {
             }
         }
     }
+
+    for (DarkHourBloodFootprint& print : s_darkHourBloodPacket.footprints) {
+        if (print.active && print.life > 0 && --print.life == 0) print.active = false;
+    }
+
+    bool touchingBlood = false;
+    for (const DarkHourBloodMark& mark : s_darkHourBloodPacket.marks) {
+        if (!mark.active || fabsf(player->current.pos.y - mark.position.y) > 70.0f) continue;
+        const f32 dx = player->current.pos.x - mark.position.x;
+        const f32 dz = player->current.pos.z - mark.position.z;
+        if (dx * dx + dz * dz <= mark.extent * mark.extent * 0.72f) {
+            touchingBlood = true;
+            s_wetStepsRemaining = 128;
+            break;
+        }
+    }
+
+    if (!s_haveLastFootprintPosition) {
+        s_lastFootprintPosition = player->current.pos;
+        s_haveLastFootprintPosition = true;
+        return;
+    }
+
+    const f32 moveX = player->current.pos.x - s_lastFootprintPosition.x;
+    const f32 moveZ = player->current.pos.z - s_lastFootprintPosition.z;
+    const f32 moved = sqrtf(moveX * moveX + moveZ * moveZ);
+    if (moved > 300.0f) {
+        s_lastFootprintPosition = player->current.pos;
+        return;
+    }
+    if (s_wetStepsRemaining <= 0 || moved < 38.0f) return;
+
+    const f32 directionX = moveX / moved;
+    const f32 directionZ = moveZ / moved;
+    const f32 side = s_nextFootIsLeft ? -9.5f : 9.5f;
+    cXyz footPosition(player->current.pos.x + directionZ * side,
+                      player->current.pos.y + 90.0f,
+                      player->current.pos.z - directionX * side);
+    dBgS_GndChk groundCheck;
+    groundCheck.SetPos(&footPosition);
+    const f32 ground = dComIfG_Bgsp().GroundCross(&groundCheck);
+    cM3dGPla surface;
+    if (ground != -G_CM3D_F_INF && dComIfG_Bgsp().GetTriPla(groundCheck, &surface) &&
+        surface.mNormal.y >= 0.65f && fabsf(ground - player->current.pos.y) < 85.0f) {
+        DarkHourBloodFootprint& print = s_darkHourBloodPacket.footprints[
+            s_darkHourBloodPacket.nextFootprint++ % 192];
+        print.position = cXyz(footPosition.x, ground, footPosition.z);
+        print.surfaceNormal = surface.mNormal;
+        print.surfaceD = surface.mD;
+        print.rotation = atan2f(directionX, directionZ);
+        print.life = 1200;
+        print.active = true;
+        s_nextFootIsLeft = !s_nextFootIsLeft;
+        if (!touchingBlood) --s_wetStepsRemaining;
+    }
+    s_lastFootprintPosition = player->current.pos;
 }
 
 }
