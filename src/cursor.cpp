@@ -33,6 +33,7 @@ HookAction imgui_begin_pre(ModContext*, void* args, void*, void*) {
         // ImGui creates internal/default windows and passive Toast/Pipelines overlays that
         // must not turn the cursor back on. Count only Dusklight's user-facing tool windows.
         static constexpr const char* interactiveWindows[] = {
+            "##MainMenuBar",
             "Actor Spawner", "Practice Tools", "Heaps", "Audio Debug", "Camera Debug",
             "Debug Overlay", "Player Info", "Input Macro", "Bloom", "TAS Movie",
             "State Manager", "Save Editor", "Processes", "Stub log",
