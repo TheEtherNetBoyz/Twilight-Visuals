@@ -41,3 +41,7 @@ add_mod(twilight_visuals
     RES_DIR res
     BUNDLE
 )
+
+# Keep live Visual Studio debugging sessions from locking the next mod link.
+# The PDB is a build-only artifact and is not included in the .dusk package.
+set_target_properties(twilight_visuals PROPERTIES PDB_NAME "twilight_visuals_1_10_4")

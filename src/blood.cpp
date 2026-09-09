@@ -99,6 +99,11 @@ public:
                                                      f32 height, GXColor center, GXColor rim) {
                 const f32 centerX = mark.position.x + offsetX;
                 const f32 centerZ = mark.position.z + offsetZ;
+                f32 centerY = mark.position.y;
+                if (fabsf(mark.surfaceNormal.y) > 0.001f) {
+                    centerY += (-mark.surfaceNormal.x * offsetX -
+                                mark.surfaceNormal.z * offsetZ) / mark.surfaceNormal.y;
+                }
                 const auto emit = [&](int sample, f32 radialScale, GXColor color) {
                     const f32 angle = mark.rotation + sample * 0.19634954f;
                     const f32 x = centerX + sinf(angle) * mark.radius[sample] * radialScale;
@@ -111,7 +116,7 @@ public:
                 GXBegin(GX_TRIANGLES, GX_VTXFMT0, 32 * 9);
                 for (int sample = 0; sample < 32; ++sample) {
                     const int next = (sample + 1) & 31;
-                    GXPosition3f32(centerX, mark.position.y + 0.8f + height, centerZ);
+                    GXPosition3f32(centerX, centerY + 0.8f + height, centerZ);
                     GXColor4u8(center.r, center.g, center.b, center.a);
                     emit(sample, scale * 0.5f, center);
                     emit(next, scale * 0.5f, center);
@@ -159,22 +164,22 @@ public:
             const f32 sizeOpacity = std::clamp((mark.extent - 220.0f) / 430.0f, 0.0f, 1.0f);
             const u8 bodyAlpha = static_cast<u8>(135.0f + sizeOpacity * 34.0f);
             const u8 centerAlpha = static_cast<u8>(66.0f + sizeOpacity * 22.0f);
-            drawPool(1.0f, 0.0f, 0.0f, 0.0f, {22, 0, 3, 220}, {8, 0, 1, 188});
+            drawPool(1.0f, 0.0f, 0.0f, 0.0f, {14, 0, 2, 205}, {14, 0, 2, 205});
             drawPool(0.925f, -mark.radius[4] * 0.008f, mark.radius[20] * 0.006f,
-                     0.14f, {91, 3, 11, bodyAlpha}, {48, 0, 6, bodyAlpha});
+                     0.14f, {78, 2, 9, bodyAlpha}, {78, 2, 9, bodyAlpha});
             drawPool(0.52f, mark.radius[10] * 0.07f, -mark.radius[26] * 0.04f,
-                     0.32f, {107, 4, 11, centerAlpha}, {62, 1, 6, 54});
+                     0.32f, {42, 0, 5, centerAlpha}, {42, 0, 5, centerAlpha});
 
             // Soft deterministic mottling replaces a tiled texture. It breaks up
             // the flat fill while keeping boundaries diffuse and line-free.
             for (int patch = 0; patch < 12; ++patch) {
                 const f32 seed = mark.rotation * (patch + 1) + mark.sheenAngle * 1.7f;
                 const f32 angle = seed + patch * 2.3999632f;
-                const f32 distance = mark.extent * (0.12f + 0.48f *
+                const f32 distance = mark.extent * (0.10f + 0.35f *
                     (0.5f + 0.5f * sinf(seed * 2.31f)));
                 const f32 x = mark.position.x + sinf(angle) * distance;
                 const f32 z = mark.position.z + cosf(angle) * distance;
-                const f32 patchSize = mark.extent * (0.085f + 0.055f *
+                const f32 patchSize = mark.extent * (0.065f + 0.035f *
                     (0.5f + 0.5f * cosf(seed * 1.63f)));
                 const bool darkPatch = (patch & 1) == 0;
                 drawMottle(x, z, patchSize * 1.7f, patchSize, angle,
