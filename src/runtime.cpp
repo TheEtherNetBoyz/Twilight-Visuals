@@ -64,7 +64,7 @@ void refresh_runtime_settings() {
         static_cast<Skybox>(std::clamp<std::int64_t>(get_int(config.skybox), 0, 16));
     g_runtime.weather =
         g_speedrunSuppressed ? Weather::Current :
-        static_cast<Weather>(std::clamp<std::int64_t>(get_int(config.weather), 0, 7));
+        static_cast<Weather>(std::clamp<std::int64_t>(get_int(config.weather), 0, 8));
     g_runtime.musicVolume =
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.musicVolume, 100), 0, 100)) /
         100.0f;

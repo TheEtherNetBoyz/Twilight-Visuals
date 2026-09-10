@@ -21,9 +21,9 @@ constexpr std::array<const char*, 17> kSkyboxes{
     "Faron Twilight", "Eldin Twilight", "Lanayru Twilight", "Palace of Twilight",
     "Sacred Grove", "Snowpeak", "Gerudo Desert", "Lake Hylia", "Fishing Hole",
     "Ordon", "Hyrule Field", "Castle Town"};
-constexpr std::array<const char*, 8> kWeather{
+constexpr std::array<const char*, 9> kWeather{
     "Current", "Clear", "Rain", "Snow", "Lightning", "Wind Storm", "Snow Storm",
-    "Heavy Fog"};
+    "Heavy Fog", "Blood Rain"};
 
 ModResult register_bool(const char* name, bool defaultValue, ConfigVarHandle& out) {
     ConfigVarDesc desc = CONFIG_VAR_DESC_INIT;

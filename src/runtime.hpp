@@ -43,6 +43,7 @@ enum class Weather : std::int64_t {
     WindStorm,
     SnowStorm,
     HeavyFog,
+    BloodRain,
 };
 
 struct RuntimeSettings {

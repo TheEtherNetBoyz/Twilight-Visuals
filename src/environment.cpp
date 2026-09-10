@@ -175,7 +175,9 @@ void apply_weather() {
         g_env_light.field_0x11f4 = saved.fogOverrideRatio;
     }
 
+    const bool bloodRain = weather == Weather::BloodRain;
     const bool wet = weather == Weather::Rain || weather == Weather::Lightning || windStorm;
+    const bool raining = wet || bloodRain;
     const u8 pattern = wet ? 1 : (weather == Weather::Snow || snowStorm) ? 2 : 0;
     g_env_light.mColpatWeather = pattern;
     g_env_light.wether_pat0 = pattern;
@@ -187,7 +189,7 @@ void apply_weather() {
     g_env_light.mColPatModeGather = 0;
     g_env_light.pat_ratio = 1.0f;
 
-    if (wet) {
+    if (raining) {
         dKyw_rain_set(250);
         g_env_light.mSnowCount = 0;
     } else if (weather == Weather::Snow || snowStorm) {
