@@ -9,6 +9,7 @@
 #include "geometry.hpp"
 #include "boundary.hpp"
 #include "running.hpp"
+#include "wall_run.hpp"
 #include "sequencing.hpp"
 #include "sky.hpp"
 #include "cursor.hpp"
@@ -56,6 +57,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     twilight_visuals::geometry::initialize();
     twilight_visuals::boundary::initialize();
     twilight_visuals::running::initialize();
+    twilight_visuals::wall_run::initialize();
     twilight_visuals::sequencing::initialize();
 
     result = twilight_visuals::cursor::initialize();
@@ -130,6 +132,7 @@ MOD_EXPORT ModResult mod_update(ModError*) {
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
     twilight_visuals::cursor::shutdown();
     twilight_visuals::sky::shutdown();
+    twilight_visuals::wall_run::shutdown();
     twilight_visuals::running::shutdown();
     twilight_visuals::sequencing::shutdown();
     twilight_visuals::geometry::shutdown();

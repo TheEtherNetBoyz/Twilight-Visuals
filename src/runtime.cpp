@@ -70,6 +70,7 @@ void refresh_runtime_settings() {
         100.0f;
     g_runtime.overrideTempleMusic = get_bool(config.overrideTempleMusic);
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
+    g_runtime.skywardSwordWallRunning = get_bool(config.skywardSwordWallRunning);
     g_runtime.humanWolfSenses = get_bool(config.humanWolfSenses);
     g_runtime.excludePalaceOfTwilight = get_bool(config.excludePalaceOfTwilight, true);
     g_runtime.hideGameplayCursor = get_bool(config.hideGameplayCursor);

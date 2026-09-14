@@ -56,6 +56,7 @@ struct RuntimeSettings {
     float musicVolume{1.0f};
     bool overrideTempleMusic{};
     bool skywardSwordRunning{};
+    bool skywardSwordWallRunning{};
     bool humanWolfSenses{};
     bool excludePalaceOfTwilight{true};
     bool hideGameplayCursor{};

@@ -14,6 +14,7 @@ struct Settings {
     ConfigVarHandle musicVolume{};
     ConfigVarHandle overrideTempleMusic{};
     ConfigVarHandle skywardSwordRunning{};
+    ConfigVarHandle skywardSwordWallRunning{};
     ConfigVarHandle humanWolfSenses{};
     ConfigVarHandle excludePalaceOfTwilight{};
     ConfigVarHandle hideGameplayCursor{};

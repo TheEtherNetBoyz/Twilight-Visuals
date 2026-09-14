@@ -128,6 +128,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Hold A while moving as human Link to run at 37 units. Includes the custom attack, roll, "
         "snow, and Magic Armor water-running behavior.",
         g_settings.skywardSwordRunning);
+    add_toggle(left, "SS Wall Running",
+        "Enable the SS wall-running, short-wall step-up, and ledge-grab behavior while Skyward "
+        "Sword Running is active. Existing running behavior is unchanged.",
+        g_settings.skywardSwordWallRunning);
     add_toggle(left, "Wolf Senses as Human",
         "Press D-pad Down as human Link to toggle Wolf Senses after the ability has been unlocked.",
         g_settings.humanWolfSenses);
@@ -186,6 +190,8 @@ ModResult register_settings(ModError*) {
     result = register_bool("override-temple-music", false, g_settings.overrideTempleMusic);
     if (result != MOD_OK) return result;
     result = register_bool("skyward-sword-running", false, g_settings.skywardSwordRunning);
+    if (result != MOD_OK) return result;
+    result = register_bool("skyward-sword-wall-running", false, g_settings.skywardSwordWallRunning);
     if (result != MOD_OK) return result;
     result = register_bool("human-wolf-senses", false, g_settings.humanWolfSenses);
     if (result != MOD_OK) return result;

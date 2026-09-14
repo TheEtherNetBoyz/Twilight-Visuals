@@ -13,7 +13,10 @@
 #include <cstring>
 namespace twilight_visuals::blood {
 namespace {
-bool dark_hour_moon_enabled() { return active() && runtime_settings().style == Style::DarkHour; }
+bool blood_puddles_enabled() {
+    return active() && (runtime_settings().style == Style::DarkHour ||
+                        runtime_settings().weather == Weather::BloodRain);
+}
 struct DarkHourBloodMark {
     cXyz position;
     f32 radius[32];
@@ -39,7 +42,7 @@ struct DarkHourBloodFootprint {
 class DarkHourBloodPacket : public J3DPacket {
 public:
     void draw() override {
-        if (!dark_hour_moon_enabled()) return;
+        if (!blood_puddles_enabled()) return;
 
         j3dSys.reinitGX();
         GXSetNumChans(1);
@@ -240,6 +243,7 @@ public:
 };
 
 static DarkHourBloodPacket s_darkHourBloodPacket;
+
 static cXyz s_lastFootprintPosition;
 static bool s_haveLastFootprintPosition = false;
 static bool s_nextFootIsLeft = true;
@@ -325,7 +329,7 @@ static void dark_hour_blood_move() {
     static s8 previousRoom = -128;
     static char previousStage[16] = {};
 
-    if (!dark_hour_moon_enabled()) {
+    if (!blood_puddles_enabled()) {
         previousRoom = -128;
         previousStage[0] = '\0';
         for (DarkHourBloodMark& mark : s_darkHourBloodPacket.marks) mark.active = false;
@@ -358,14 +362,14 @@ static void dark_hour_blood_move() {
         // low-discrepancy disk covers distant geometry evenly instead of
         // relying on a small random circle around Link. Accepted marks remain
         // resident and are rendered regardless of their distance from Link.
-        constexpr int MaxAttempts = 12000;
-        constexpr int MaxMarks = 72;
+        constexpr int maxAttempts = 12000;
+        constexpr int maxMarks = 72;
         constexpr int MaxFloorLayersPerColumn = 8;
         constexpr f32 CoverageRadius = 40000.0f;
         constexpr f32 FloorSearchHeight = 30000.0f;
         constexpr f32 FloorSearchDepth = 30000.0f;
         for (int attempt = 0;
-             attempt < MaxAttempts && s_darkHourBloodPacket.nextMark < MaxMarks; ++attempt) {
+             attempt < maxAttempts && s_darkHourBloodPacket.nextMark < maxMarks; ++attempt) {
             // Fresh random polar coordinates make every room load different. Square-root
             // radius keeps the distribution uniform by area; overlap rejection maintains
             // the requested spacing without falling back to a repeated fixed pattern.
@@ -381,7 +385,7 @@ static void dark_hour_blood_move() {
             for (int floorLayer = 0;
                  floorLayer < MaxFloorLayersPerColumn &&
                  position.y >= player->current.pos.y - FloorSearchDepth &&
-                 s_darkHourBloodPacket.nextMark < MaxMarks;
+                 s_darkHourBloodPacket.nextMark < maxMarks;
                  ++floorLayer) {
                 dBgS_GndChk groundCheck;
                 groundCheck.SetPos(&position);
@@ -525,7 +529,7 @@ static void dark_hour_blood_move() {
 }
 void move() { dark_hour_blood_move(); }
 void draw() {
-    if (!dark_hour_moon_enabled() || g_env_light.camera_water_in_status != 0) return;
+    if (!blood_puddles_enabled() || g_env_light.camera_water_in_status != 0) return;
     dComIfGd_setXluListBG();
     j3dSys.getDrawBuffer(J3DSysDrawBuf_Xlu)->entryImm(&s_darkHourBloodPacket, 0);
     dComIfGd_setList();

@@ -386,6 +386,12 @@ bool is_running() {
     auto* p = static_cast<daAlink_c*>(dComIfGp_getLinkPlayer());
     return p && moving(p) && grounded(p);
 }
+void refresh_run_speed(daAlink_c* p) {
+    if (p && moving(p) && grounded(p)) {
+        p->mNormalSpeed = run_speed(p);
+        p->speedF = p->mNormalSpeed;
+    }
+}
 void shutdown() {
     humanWarpRequest = nullptr;
     transformTraceFrames = 0;
