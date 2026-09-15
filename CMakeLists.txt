@@ -43,6 +43,29 @@ add_mod(twilight_visuals
     BUNDLE
 )
 
+# The version-independent Windows SDK stub predates the owned animation path and
+# does not list J3DAnmBase's virtual destructor. The real Dusk executable exports
+# it, so provide only the missing import at link time when no matching host import
+# library was supplied. This does not define or replace the runtime symbol.
+if (WIN32 AND MSVC AND NOT DUSK_GAME_EXE)
+    set(_twilight_visuals_compat_lib
+        "${CMAKE_CURRENT_BINARY_DIR}/twilight_visuals_dusklight_compat.lib")
+    add_custom_command(
+        OUTPUT "${_twilight_visuals_compat_lib}"
+        COMMAND "${CMAKE_AR}" /nologo
+                "/def:${CMAKE_CURRENT_SOURCE_DIR}/cmake/dusklight_compat.def"
+                /machine:x64
+                /name:dusklight.exe
+                "/out:${_twilight_visuals_compat_lib}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/dusklight_compat.def"
+        VERBATIM
+    )
+    add_custom_target(twilight_visuals_dusklight_compat
+        DEPENDS "${_twilight_visuals_compat_lib}")
+    add_dependencies(twilight_visuals twilight_visuals_dusklight_compat)
+    target_link_libraries(twilight_visuals PRIVATE "${_twilight_visuals_compat_lib}")
+endif ()
+
 # Keep live Visual Studio debugging sessions from locking the next mod link.
 # The PDB is a build-only artifact and is not included in the .dusk package.
 set_target_properties(twilight_visuals PROPERTIES PDB_NAME "twilight_visuals_1_11_6")
