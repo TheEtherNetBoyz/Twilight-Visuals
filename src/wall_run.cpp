@@ -26,7 +26,7 @@ DEFINE_HOOK(&daAlink_c::procHangWallCatch, HangWallCatch);
 
 struct Clip {
     ResourceBuffer buffer = RESOURCE_BUFFER_INIT;
-    J3DAnmTransform* animation = nullptr;
+    mDoExt_transAnmBas animation{nullptr};
     bool ready = false;
 };
 
@@ -85,11 +85,7 @@ bool loadClip(Clip& clip, const char* path) {
         svc_resource->free(mod_ctx, &clip.buffer);
         return false;
     }
-    clip.animation = static_cast<J3DAnmTransform*>(J3DAnmLoaderDataBase::load(data));
-    if (clip.animation == nullptr) {
-        svc_resource->free(mod_ctx, &clip.buffer);
-        return false;
-    }
+    J3DAnmLoaderDataBase::setResource(&clip.animation, data);
     clip.ready = true;
     return true;
 }
@@ -97,8 +93,6 @@ bool loadClip(Clip& clip, const char* path) {
 void freeClips() {
     wallClip.ready = false;
     ledgeGrabClip.ready = false;
-    wallClip.animation = nullptr;
-    ledgeGrabClip.animation = nullptr;
     svc_resource->free(mod_ctx, &wallClip.buffer);
     svc_resource->free(mod_ctx, &ledgeGrabClip.buffer);
 }
@@ -107,8 +101,8 @@ bool customAnimation(daAlink_c* p) {
     for (int i = 0; i < 2; ++i) {
         auto* under = p->mNowAnmPackUnder[i].getAnmTransform();
         auto* upper = p->mNowAnmPackUpper[i].getAnmTransform();
-        if (under == wallClip.animation || under == ledgeGrabClip.animation ||
-            upper == wallClip.animation || upper == ledgeGrabClip.animation) {
+        if (under == &wallClip.animation || under == &ledgeGrabClip.animation ||
+            upper == &wallClip.animation || upper == &ledgeGrabClip.animation) {
             return true;
         }
     }
@@ -119,7 +113,8 @@ void playClip(daAlink_c* p, Clip& clip, float rate) {
     p->setSingleAnimeBaseSpeed(daAlink_c::ANM_RUN_B, 2.0f, 3.0f);
     auto* nativeUnder = p->mNowAnmPackUnder[0].getAnmTransform();
     auto* nativeUpper = p->mNowAnmPackUpper[0].getAnmTransform();
-    p->commonSingleAnime(clip.animation, nativeUpper != nativeUnder ? nativeUpper : nullptr,
+    clip.animation.setBas(nullptr);
+    p->commonSingleAnime(&clip.animation, nativeUpper != nativeUnder ? nativeUpper : nullptr,
         rate, 0.0f, -1);
     p->resetBasAnime();
 }
@@ -132,16 +127,17 @@ void detachClip(daAlink_c* p) {
 }
 
 void playLedgeGrabClip(daAlink_c* p) {
+    ledgeGrabClip.animation.setBas(nullptr);
     // The SS catch is a coordinated full-body transition. Mixing TP's native
     // upper track into it twists the torso and arms away from the retargeted pose.
-    p->commonSingleAnime(ledgeGrabClip.animation, nullptr, 1.0f, 2.0f, -1);
+    p->commonSingleAnime(&ledgeGrabClip.animation, nullptr, 1.0f, 2.0f, -1);
     p->resetBasAnime();
 }
 
 void applyPendingLedgeGrab(daAlink_c* p) {
     if (!ledgeGrabPending || !enabled(p) || !ledgeGrabClip.ready ||
         p->mProcID != daAlink_c::PROC_HANG_WALL_CATCH ||
-        p->getNowAnmPackUnder(daAlink_c::UNDER_0) == ledgeGrabClip.animation) {
+        p->getNowAnmPackUnder(daAlink_c::UNDER_0) == &ledgeGrabClip.animation) {
         return;
     }
     playLedgeGrabClip(p);
