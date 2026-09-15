@@ -113,7 +113,6 @@ void playClip(daAlink_c* p, Clip& clip, float rate) {
     p->setSingleAnimeBaseSpeed(daAlink_c::ANM_RUN_B, 2.0f, 3.0f);
     auto* nativeUnder = p->mNowAnmPackUnder[0].getAnmTransform();
     auto* nativeUpper = p->mNowAnmPackUpper[0].getAnmTransform();
-    clip.animation.setBas(nullptr);
     p->commonSingleAnime(&clip.animation, nativeUpper != nativeUnder ? nativeUpper : nullptr,
         rate, 0.0f, -1);
     p->resetBasAnime();
@@ -127,7 +126,6 @@ void detachClip(daAlink_c* p) {
 }
 
 void playLedgeGrabClip(daAlink_c* p) {
-    ledgeGrabClip.animation.setBas(nullptr);
     // The SS catch is a coordinated full-body transition. Mixing TP's native
     // upper track into it twists the torso and arms away from the retargeted pose.
     p->commonSingleAnime(&ledgeGrabClip.animation, nullptr, 1.0f, 2.0f, -1);
